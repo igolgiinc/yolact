@@ -38,6 +38,7 @@ from threading import Thread
 app = Flask(__name__)
 request_queue = None
 worker_thread = None
+contours_json = {}
 
 @app.route("/api/v0/classify/", methods = ['POST'])
 def handle_post():
@@ -45,13 +46,15 @@ def handle_post():
     #print(content)
     print(' * Queuing:', content)
     request_queue.put(content)
-    content["id"] = '0'
+    content["id"] = 0
     return jsonify(content), 201
 
 @app.route("/api/v0/classify/<classify_id>/", methods = ['GET'])
 def handle_get(classify_id):
-    print(classify_id)
-    return classify_id
+    # print(classify_id)
+    print(" * Contours JSON in GET", json.dumps(contours_json))
+    contours_json["status"] = "finished"
+    return jsonify(contours_json)
 
 def flask_evaluate(thread_id, net:Yolact, dataset, input_queue):
     """This is the worker thread function.
@@ -187,7 +190,6 @@ iou_thresholds = [x / 100 for x in range(50, 100, 5)]
 coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
-contours_json = {}
 
 def wrapper(func, *args, **kwargs):
     def wrapped():
@@ -696,7 +698,8 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
         contours_json["results"]["labels"] = []
         contours_json["results"]["num_contour_points"] = []
         contours_json["results"]["contours"] = []
-        
+        contours_json["status"] = "running"
+            
     img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
 
     #print(contours_json)
@@ -705,7 +708,7 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
             #json.dump(contours_json, ofp, sort_keys=True, indent=4, separators=(',', ': '))
             json.dump(contours_json, ofp)
     else:
-        print(json.dumps(contours_json))
+        print(" * Contour JSON: ", json.dumps(contours_json))
               
     if save_path is None:
         img_numpy = img_numpy[:, :, (2, 1, 0)]
