@@ -53,8 +53,11 @@ def handle_post():
 def handle_get(classify_id):
     # print(classify_id)
     print(" * Contours JSON in GET", json.dumps(contours_json))
-    contours_json["status"] = "finished"
-    return jsonify(contours_json)
+    if not contours_json or contours_json["status"] == "running":
+        response_json = {"status": "running"}
+    else:
+        response_json = contours_json
+    return jsonify(response_json)
 
 def flask_evaluate(thread_id, net:Yolact, dataset, input_queue):
     """This is the worker thread function.
@@ -354,6 +357,8 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
             
             contours_json["results"]["num_contour_points"].append(len(mask_contours[j]))
             contours_json["results"]["contours"].append(mask_contours[j])
+
+        contours_json["status"] = "finished"
 
     return img_numpy
 
