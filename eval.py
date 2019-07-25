@@ -29,22 +29,44 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import cv2
 import timeit
+
 from flask import Flask
-from flask import request
+from flask import request, jsonify
+from queue import Queue
+from threading import Thread
 
 app = Flask(__name__)
+request_queue = None
+worker_thread = None
 
 @app.route("/api/v0/classify/", methods = ['POST'])
 def handle_post():
     content = request.json
-    print(content)
-    return content
+    #print(content)
+    print(' * Queuing:', content)
+    request_queue.put(content)
+    content["id"] = '0'
+    return jsonify(content), 201
 
 @app.route("/api/v0/classify/<classify_id>/", methods = ['GET'])
 def handle_get(classify_id):
     print(classify_id)
     return classify_id
 
+def flask_evaluate(thread_id, net:Yolact, dataset, input_queue):
+    """This is the worker thread function.
+    It processes items in the queue one after
+    another.
+    """
+    print(" * Inside worker thread for flask_evaluate")
+    while True:
+        print(' * %s: Looking for the next item in queue' % thread_id)
+        request_json = input_queue.get()
+        print(" * Got item from queue: ", request_json)
+        # we just pretend and sleep
+        time.sleep(1)
+        input_queue.task_done()
+    
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -1098,7 +1120,7 @@ if __name__ == '__main__':
         cfg.replace({'min_size': args.minsize, 'max_size': args.maxsize})
         print('cfg.min_size: %d, cfg.max_size: %d' % (cfg.min_size, cfg.max_size))
            
-    print('display_bboxes: %d display_text: %d' % (int(args.display_bboxes), int(args.display_text)))
+    print(' * display_bboxes: %d display_text: %d' % (int(args.display_bboxes), int(args.display_text)))
     
     if args.detect:
         cfg.eval_mask_branch = False
@@ -1130,7 +1152,7 @@ if __name__ == '__main__':
         else:
             dataset = None        
 
-        print('Loading model...', end='')
+        print(' * Loading model...', end='')
         net = Yolact()
         net.load_weights(args.trained_model)
         net.eval()
@@ -1140,7 +1162,14 @@ if __name__ == '__main__':
             net = net.cuda()
 
         if args.run_with_flask:
+            request_queue = Queue()
+            worker_thread = Thread(target=flask_evaluate, args=(0, net, dataset, request_queue,))
+            worker_thread.setDaemon(True)
+            worker_thread.start()
             app.run(host='0.0.0.0', port=args.flask_port)
+            #print '*** Main thread waiting'
+            request_queue.join()
+            #print '*** Done'
         else:
             evaluate(net, dataset)
 
