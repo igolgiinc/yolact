@@ -28,6 +28,7 @@ from PIL import Image
 
 import matplotlib.pyplot as plt
 import cv2
+import timeit
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -107,6 +108,14 @@ def parse_args(argv=None):
                         help='If specified, override the dataset specified in the config with this one (example: coco2017_dataset).')
     parser.add_argument('--detect', default=False, dest='detect', action='store_true',
                         help='Don\'t evauluate the mask branch at all and only do object detection. This only works for --display and --benchmark.')
+    parser.add_argument('--minsize', default=200, type=int,
+                        help='Min. size to be used for image during inference/detection')
+    parser.add_argument('--maxsize', default=700, type=int,
+                        help='Max. size to be used for image during inference/detection')
+    parser.add_argument('--contours_json', default=False, type=str2bool,
+                        help='Should contours be generated for each object detected?')
+    parser.add_argument('--contours_json_file', default=None, type=str,
+                        help='A path to JSON file to be written out with detection info')
 
     parser.set_defaults(no_bar=False, display=False, resume=False, output_coco_json=False, output_web_json=False, shuffle=False,
                         benchmark=False, no_sort=False, no_hash=False, mask_proto_debug=False, crop=True, detect=False)
@@ -120,10 +129,18 @@ def parse_args(argv=None):
     if args.seed is not None:
         random.seed(args.seed)
 
+    #print("= args.display = %d" % (int(args.display)))
+    
 iou_thresholds = [x / 100 for x in range(50, 100, 5)]
 coco_cats = {} # Call prep_coco_cats to fill this
 coco_cats_inv = {}
 color_cache = defaultdict(lambda: {})
+contours_json = {}
+
+def wrapper(func, *args, **kwargs):
+    def wrapped():
+        return func(*args, **kwargs)
+    return wrapped
 
 def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45):
     """
@@ -146,14 +163,22 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
         if cfg.eval_mask_branch:
             # Masks are drawn on the GPU, so don't copy
             masks = t[3][:args.top_k]
+            if args.contours_json:
+                masks_cpu_numpy = masks.cpu().numpy().astype(np.uint8)
         classes, scores, boxes = [x[:args.top_k].cpu().numpy() for x in t[:3]]
-
+    
     num_dets_to_consider = min(args.top_k, classes.shape[0])
     for j in range(num_dets_to_consider):
         if scores[j] < args.score_threshold:
             num_dets_to_consider = j
             break
-    
+
+    #for i in range(num_dets_to_consider):
+    #    print(i, masks[i].nonzero().size())
+    #print(masks_cpu_numpy[0].nonzero())
+    if args.contours_json:
+        contours_json["results"]["num_labels_detected"] = num_dets_to_consider
+        
     if num_dets_to_consider == 0:
         # No detections found so just output the original image
         return (img_gpu * 255).byte().cpu().numpy()
@@ -176,20 +201,21 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
                 color_cache[on_gpu][color_idx] = color
             return color
 
+        
     # First, draw the masks on the GPU where we can do it really fast
     # Beware: very fast but possibly unintelligible mask-drawing code ahead
     # I wish I had access to OpenGL or Vulkan but alas, I guess Pytorch tensor operations will have to suffice
     if args.display_masks and cfg.eval_mask_branch:
         # After this, mask is of size [num_dets, h, w, 1]
         masks = masks[:num_dets_to_consider, :, :, None]
-        
+                    
         # Prepare the RGB images for each mask given their color (size [num_dets, h, w, 1])
         colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
         masks_color = masks.repeat(1, 1, 1, 3) * colors * mask_alpha
 
         # This is 1 everywhere except for 1-mask_alpha where the mask is
         inv_alph_masks = masks * (-mask_alpha) + 1
-        
+        #print(inv_alph_masks.size())
         # I did the math for this on pen and paper. This whole block should be equivalent to:
         #    for j in range(num_dets_to_consider):
         #        img_gpu = img_gpu * inv_alph_masks[j] + masks_color[j]
@@ -205,15 +231,25 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
     # Note, make sure this is a uint8 tensor or opencv will not anti alias text for whatever reason
     img_numpy = (img_gpu * 255).byte().cpu().numpy()
     
-    if args.display_text or args.display_bboxes:
+    if args.display_text or args.display_bboxes or args.contours_json:
         for j in reversed(range(num_dets_to_consider)):
             x1, y1, x2, y2 = boxes[j, :]
             color = get_color(j)
             score = scores[j]
 
+            if args.contours_json:
+                contours_json["results"]["left"].append(int(x1))
+                contours_json["results"]["top"].append(int(y1))
+                contours_json["results"]["right"].append(int(x2))
+                contours_json["results"]["bottom"].append(int(y2))
+                contours_json["results"]["confidence"].append(float(score))
+                contours_json["results"]["labels"].append(cfg.dataset.class_names[classes[j]])
+                
             if args.display_bboxes:
+                #if (j == 6):
+                #    print("x1,y1: %d,%d | x2,y2: %d,%d" % (x1,y1,x2,y2))
                 cv2.rectangle(img_numpy, (x1, y1), (x2, y2), color, 1)
-
+            
             if args.display_text:
                 _class = cfg.dataset.class_names[classes[j]]
                 text_str = '%s: %.2f' % (_class, score) if args.display_scores else _class
@@ -229,7 +265,42 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
 
                 cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
-    
+
+    # Code to get contours of the pixel masks
+    if args.contours_json:
+        mask_contours = []
+        
+        for j in range(num_dets_to_consider):
+            # print("masks_cpu_numpy[%d] shape: " % j, masks_cpu_numpy[j].shape, " | dtype: ", masks_cpu_numpy[j].dtype)
+            masks_cpu_numpy[j] *= 255
+
+            # Find contours:
+            contours, hierarchy = cv2.findContours(masks_cpu_numpy[j], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # cv2.CHAIN_APPROX_NONE
+            #print("%d contours len: " % j, len(contours), " hierarchy: ", hierarchy)
+            if len(contours) == 1:
+                contour_list = contours[0].tolist()
+                mask_contours.append([contour_pt[0] for contour_pt in contour_list])
+                #print("%d contours[0] len: " % j, len(contours[0]))
+            else:
+                #print("Contours 0:", contours[0])
+                #print("Contours 1:", contours[1])
+                max_len_contours_idx = 0
+                max_len_contours = len(contours[0])
+                for contour_idx in range(len(contours)):
+                    if len(contours[contour_idx]) > max_len_contours:
+                        max_len_contours = len(contours[contour_idx])
+                        max_len_contours_idx = contour_idx
+
+                contour_list = contours[max_len_contours_idx].tolist()
+                mask_contours.append([contour_pt[0] for contour_pt in contour_list])
+                #mask_contours.append(contours[max_len_contours_idx].tolist())
+                #print("%d contours[%d] len: " % (j,max_len_contours_idx,), len(contours[max_len_contours_idx]))
+            #if j == 6:
+            #    print(mask_contours[j])
+            
+            contours_json["results"]["num_contour_points"].append(len(mask_contours[j]))
+            contours_json["results"]["contours"].append(mask_contours[j])
+
     return img_numpy
 
 def prep_benchmark(dets_out, h, w):
@@ -562,8 +633,28 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
     batch = FastBaseTransform()(frame.unsqueeze(0))
     preds = net(batch)
 
+    if args.contours_json:
+        contours_json["input"] = path
+        contours_json["results"] = {}
+        contours_json["results"]["left"] = []
+        contours_json["results"]["top"] = []
+        contours_json["results"]["right"] = []
+        contours_json["results"]["bottom"] = []
+        contours_json["results"]["confidence"] = []
+        contours_json["results"]["labels"] = []
+        contours_json["results"]["num_contour_points"] = []
+        contours_json["results"]["contours"] = []
+        
     img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
-    
+
+    #print(contours_json)
+    if args.contours_json_file:
+        with open(args.contours_json_file, "w") as ofp:
+            #json.dump(contours_json, ofp, sort_keys=True, indent=4, separators=(',', ': '))
+            json.dump(contours_json, ofp)
+    else:
+        print(json.dumps(contours_json))
+              
     if save_path is None:
         img_numpy = img_numpy[:, :, (2, 1, 0)]
 
@@ -573,7 +664,8 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
         plt.show()
     else:
         cv2.imwrite(save_path, img_numpy)
-
+        #pass
+    
 def evalimages(net:Yolact, input_folder:str, output_folder:str):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
@@ -585,8 +677,10 @@ def evalimages(net:Yolact, input_folder:str, output_folder:str):
         name = '.'.join(name.split('.')[:-1]) + '.png'
         out_path = os.path.join(output_folder, name)
 
-        evalimage(net, path, out_path)
-        print(path + ' -> ' + out_path)
+        wrapped = wrapper(evalimage, net, path, out_path)
+        time_taken = timeit.timeit(wrapped, number=1)
+        #evalimage(net, path, out_path)
+        print(path + ' -> ' + out_path + ' in time: %0.6f sec' % (time_taken,) + ' with an fps = %0.2f' % (1.0/time_taken,))
     print('Done.')
 
 from multiprocessing.pool import ThreadPool
@@ -751,9 +845,11 @@ def savevideo(net:Yolact, in_path:str, out_path:str):
     frame_width  = round(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = round(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
     num_frames   = round(vid.get(cv2.CAP_PROP_FRAME_COUNT))
+    four_cc = cv2.VideoWriter_fourcc(*"mp4v")
+    print("\r FOURCC code: 0x%x" % (four_cc))
+    out = cv2.VideoWriter(out_path, four_cc, target_fps, (frame_width, frame_height))
+    #out = cv2.VideoWriter(out_path, 0x21, target_fps, (frame_width, frame_height), False)
     
-    out = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), target_fps, (frame_width, frame_height))
-
     transform = FastBaseTransform()
     frame_times = MovingAverage()
     progress_bar = ProgressBar(30, num_frames)
@@ -978,6 +1074,13 @@ if __name__ == '__main__':
         print('Config not specified. Parsed %s from the file name.\n' % args.config)
         set_cfg(args.config)
 
+    if args.minsize != 200 or args.maxsize != 700:
+        print('Setting min. size to %d px and max. size to %d px' % (args.minsize, args.maxsize,))
+        cfg.replace({'min_size': args.minsize, 'max_size': args.maxsize})
+        print('cfg.min_size: %d, cfg.max_size: %d' % (cfg.min_size, cfg.max_size))
+           
+    print('display_bboxes: %d display_text: %d' % (int(args.display_bboxes), int(args.display_text)))
+    
     if args.detect:
         cfg.eval_mask_branch = False
 
