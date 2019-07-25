@@ -59,12 +59,23 @@ def flask_evaluate(thread_id, net:Yolact, dataset, input_queue):
     another.
     """
     print(" * Inside worker thread for flask_evaluate")
+
+    net.detect.use_fast_nms = args.fast_nms
+    cfg.mask_proto_debug = args.mask_proto_debug
+
     while True:
         print(' * %s: Looking for the next item in queue' % thread_id)
         request_json = input_queue.get()
         print(" * Got item from queue: ", request_json)
         # we just pretend and sleep
-        time.sleep(1)
+        if request_json["output_filepath"].endswith(".jpg") or request_json["output_filepath"].endswith(".png"):
+            out = request_json["output_filepath"]
+        else:
+            out = request_json["output_filepath"] + ".jpg"
+
+        with torch.no_grad():
+            evalimage(net, request_json["input"], out)
+            
         input_queue.task_done()
     
 def str2bool(v):
@@ -1145,7 +1156,7 @@ if __name__ == '__main__':
             calc_map(ap_data)
             exit()
 
-        if args.image is None and args.video is None and args.images is None:
+        if args.image is None and args.video is None and args.images is None and args.run_with_flask is None:
             dataset = COCODetection(cfg.dataset.valid_images, cfg.dataset.valid_info,
                                     transform=BaseTransform(), has_gt=cfg.dataset.has_gt)
             prep_coco_cats()
