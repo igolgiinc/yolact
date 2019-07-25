@@ -29,6 +29,21 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import cv2
 import timeit
+from flask import Flask
+from flask import request
+
+app = Flask(__name__)
+
+@app.route("/api/v0/classify/", methods = ['POST'])
+def handle_post():
+    content = request.json
+    print(content)
+    return content
+
+@app.route("/api/v0/classify/<classify_id>/", methods = ['GET'])
+def handle_get(classify_id):
+    print(classify_id)
+    return classify_id
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -116,6 +131,10 @@ def parse_args(argv=None):
                         help='Should contours be generated for each object detected?')
     parser.add_argument('--contours_json_file', default=None, type=str,
                         help='A path to JSON file to be written out with detection info')
+    parser.add_argument('--run_with_flask', default=False, type=str2bool,
+                        help='Run with Flask and support a minimal REST-ful API?')
+    parser.add_argument('--flask_port', default=11000, type=int,
+                        help='Port to run web-service on')
 
     parser.set_defaults(no_bar=False, display=False, resume=False, output_coco_json=False, output_web_json=False, shuffle=False,
                         benchmark=False, no_sort=False, no_hash=False, mask_proto_debug=False, crop=True, detect=False)
@@ -1120,6 +1139,9 @@ if __name__ == '__main__':
         if args.cuda:
             net = net.cuda()
 
-        evaluate(net, dataset)
+        if args.run_with_flask:
+            app.run(host='0.0.0.0', port=args.flask_port)
+        else:
+            evaluate(net, dataset)
 
 
