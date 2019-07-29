@@ -33,11 +33,12 @@ import timeit
 from flask import Flask
 from flask import request, jsonify
 from queue import Queue
-from threading import Thread
+from threading import Thread, Lock
 
 app = Flask(__name__)
 request_queue = None
 worker_thread = None
+contours_json_status_lock = None
 contours_json = {}
 
 @app.route("/api/v0/classify/", methods = ['POST'])
@@ -47,13 +48,24 @@ def handle_post():
     print(' * Queuing:', content)
     request_queue.put(content)
     content["id"] = 0
+    contours_json_status_lock.acquire()
+    contours_json["status"] = "running"
+    contours_json_status_lock.release()
     return jsonify(content), 201
 
 @app.route("/api/v0/classify/<classify_id>/", methods = ['GET'])
 def handle_get(classify_id):
     # print(classify_id)
     print(" * Contours JSON in GET", json.dumps(contours_json))
-    if not contours_json or contours_json["status"] == "running":
+    contours_json_status = None
+    if contours_json:
+        contours_json_status_lock.acquire()
+        contours_json_status = contours_json["status"]
+        contours_json_status_lock.release()
+        
+    if not contours_json:
+        response_json = {"status": "idle"}
+    elif (contours_json and contours_json_status == "running"):
         response_json = {"status": "running"}
     else:
         response_json = contours_json
@@ -358,7 +370,10 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
             contours_json["results"]["num_contour_points"].append(len(mask_contours[j]))
             contours_json["results"]["contours"].append(mask_contours[j])
 
-        contours_json["status"] = "finished"
+        if args.run_with_flask:
+            contours_json_status_lock.acquire()
+            contours_json["status"] = "finished"
+            contours_json_status_lock.release()
 
     return img_numpy
 
@@ -703,7 +718,7 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
         contours_json["results"]["labels"] = []
         contours_json["results"]["num_contour_points"] = []
         contours_json["results"]["contours"] = []
-        contours_json["status"] = "running"
+        #contours_json["status"] = "running"
             
     img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
 
@@ -1182,6 +1197,7 @@ if __name__ == '__main__':
 
         if args.run_with_flask:
             request_queue = Queue()
+            contours_json_status_lock = Lock()
             worker_thread = Thread(target=flask_evaluate, args=(0, net, dataset, request_queue,))
             worker_thread.setDaemon(True)
             worker_thread.start()
