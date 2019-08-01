@@ -51,6 +51,7 @@ def handle_post():
     contours_json_status_lock.acquire()
     contours_json["status"] = "running"
     contours_json_status_lock.release()
+    print(" * Set status to running")
     return jsonify(content), 201
 
 @app.route("/api/v0/classify/<classify_id>/", methods = ['GET'])
@@ -244,11 +245,19 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
 
     #for i in range(num_dets_to_consider):
     #    print(i, masks[i].nonzero().size())
-    #print(masks_cpu_numpy[0].nonzero())
+    #print(masks[6].nonzero().size())
     if args.contours_json:
         contours_json["results"]["num_labels_detected"] = num_dets_to_consider
         
     if num_dets_to_consider == 0:
+        if args.contours_json:
+            print(" * About to set status to finished")
+            if args.run_with_flask:
+                contours_json_status_lock.acquire()
+                contours_json["status"] = "finished"
+                contours_json_status_lock.release()
+                print(" * Set status to finished")
+
         # No detections found so just output the original image
         return (img_gpu * 255).byte().cpu().numpy()
 
@@ -340,13 +349,18 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
         mask_contours = []
         
         for j in range(num_dets_to_consider):
-            # print("masks_cpu_numpy[%d] shape: " % j, masks_cpu_numpy[j].shape, " | dtype: ", masks_cpu_numpy[j].dtype)
+            #print("masks_cpu_numpy[%d] shape: " % j, masks_cpu_numpy[j].shape, " | dtype: ", masks_cpu_numpy[j].dtype)
             masks_cpu_numpy[j] *= 255
 
             # Find contours:
             contours, hierarchy = cv2.findContours(masks_cpu_numpy[j], cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # cv2.CHAIN_APPROX_NONE
             #print("%d contours len: " % j, len(contours), " hierarchy: ", hierarchy)
-            if len(contours) == 1:
+            if len(contours) == 0:
+                pixel_mask_pts = list(masks[j].nonzero().size())[0]
+                print(" * NO CONTOURS FOUND | # (PIXEL MASK PTS): ", pixel_mask_pts)
+                print(" * %d contours len: " % j, len(contours), " hierarchy: ", hierarchy, " num non-zero pixel mask pts: ", pixel_mask_pts)
+                mask_contours.append([])
+            elif len(contours) == 1:
                 contour_list = contours[0].tolist()
                 mask_contours.append([contour_pt[0] for contour_pt in contour_list])
                 #print("%d contours[0] len: " % j, len(contours[0]))
@@ -366,15 +380,17 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
                 #print("%d contours[%d] len: " % (j,max_len_contours_idx,), len(contours[max_len_contours_idx]))
             #if j == 6:
             #    print(mask_contours[j])
-            
+
             contours_json["results"]["num_contour_points"].append(len(mask_contours[j]))
             contours_json["results"]["contours"].append(mask_contours[j])
 
+        print(" * About to set status to finished")
         if args.run_with_flask:
             contours_json_status_lock.acquire()
             contours_json["status"] = "finished"
             contours_json_status_lock.release()
-
+            print(" * Set status to finished")
+                
     return img_numpy
 
 def prep_benchmark(dets_out, h, w):
