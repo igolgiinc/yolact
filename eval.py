@@ -1195,7 +1195,7 @@ if __name__ == '__main__':
             calc_map(ap_data)
             exit()
 
-        if args.image is None and args.video is None and args.images is None and args.run_with_flask is None:
+        if args.image is None and args.video is None and args.images is None and args.run_with_flask is False:
             dataset = COCODetection(cfg.dataset.valid_images, cfg.dataset.valid_info,
                                     transform=BaseTransform(), has_gt=cfg.dataset.has_gt)
             prep_coco_cats()
