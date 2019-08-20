@@ -198,12 +198,17 @@ class AnnotationJsonUtils():
         return a_id
 
 class CocoJsonCreator():
-
+    
     def __init__(self, skip_cmdline_args=False):
         if skip_cmdline_args:
             self._init_dataset_info()
             self._init_mask_definitions()
-
+            self.skip_cmdline_args = True
+            self.image_objs = []
+            self.annotation_objs = []
+        else:
+            self.skip_cmdline_args = False
+            
     def _init_dataset_info(self):
         self.dataset_info = {}
 
@@ -351,19 +356,28 @@ class CocoJsonCreator():
 
         return image_objs, annotation_objs
 
+    def put_images_info(self, image_objs):
+        self.image_objs = image_objs
+
+    def put_annotations_info(self, annotation_objs):
+        self.annotation_objs = annotation_objs
+        
     def main(self, args):
         #self.validate_and_process_args(args)
 
         info = self.create_info()
         licenses = self.create_licenses()
         categories, category_ids_by_name = self.create_categories()
-        #images, annotations = self.create_images_and_annotations(category_ids_by_name)
+        if self.skip_cmdline_args:
+            images, annotations = self.image_objs, self.annotation_objs
+        else:
+            images, annotations = self.create_images_and_annotations(category_ids_by_name)
 
         master_obj = {
             'info': info,
             'licenses': licenses,
-            #'images': images,
-            #'annotations': annotations,
+            'images': images,
+            'annotations': annotations,
             'categories': categories
         }
 

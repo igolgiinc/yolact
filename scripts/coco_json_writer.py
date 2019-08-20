@@ -29,6 +29,8 @@ class CocoDataset():
         self.bus_category_id = -1
         self.truck_category_id = -1
         self.person_category_id = -1
+        self.our_interest_images = []
+        self.our_interest_annotations = []
         
         json_file = open(self.annotation_path)
         self.coco = json.load(json_file)
@@ -80,7 +82,9 @@ class CocoDataset():
             elif category["name"] == "person":
                 self.categories_of_interest.append(cat_id)
                 self.person_category_id = cat_id
-            
+
+        print("Total categories (original): ", len(self.coco['categories']))
+        
     def _process_images(self):
         self.images = dict()
         for image in self.coco['images']:
@@ -89,7 +93,8 @@ class CocoDataset():
                 self.images[image_id] = image
             else:
                 print(f'ERROR: Skipping duplicate image id: {image}')
-                
+        print("Total images (original): ", len(self.coco['images']))
+
     def _process_segmentations(self):
         self.segmentations = dict()
         for segmentation in self.coco['annotations']:
@@ -97,7 +102,8 @@ class CocoDataset():
             if image_id not in self.segmentations:
                 self.segmentations[image_id] = []
             self.segmentations[image_id].append(segmentation)
-
+        print("Total annotations (original): ", len(self.coco['annotations']), " | #images_with_annotations: ", len(self.segmentations.keys()))
+        
     def _process_ourinterest_info(self):
         print('Process OurInterest Info')
         print('==================')
@@ -106,27 +112,41 @@ class CocoDataset():
         self.bus_count = 0
         self.truck_count = 0
         self.vehicle_count = 0
+        self.our_interest_images = []
+        self.our_interest_annotations = []
+
+        #custom_super_categories = {"person": {'person'},
+        #"vehicle": {'car', 'bus', 'truck'}}
+
         for key, items in self.segmentations.items():
             for item in items:
                 if item["category_id"] in self.categories_of_interest:
-                    if item["category_id"] == self.car_category_id:
+                    
+                    image_id = key
+                    if self.images[image_id] not in self.our_interest_images:
+                        self.our_interest_images.append(self.images[image_id])
+
+                    annotation_obj = item
+
+                    if item["category_id"] == self.person_category_id:
+                        self.person_count += 1
+                        annotation_obj["category_id"] = 1
+                    elif item["category_id"] == self.car_category_id:
                         self.car_count += 1
                         self.vehicle_count += 1
+                        annotation_obj["category_id"] = 2
                     elif item["category_id"] == self.bus_category_id:
                         self.bus_count += 1
                         self.vehicle_count += 1
+                        annotation_obj["category_id"] = 3
                     elif item["category_id"] == self.truck_category_id:
                         self.truck_count += 1
                         self.vehicle_count += 1
-                    elif item["category_id"] == self.person_category_id:
-                        self.person_count += 1
-                        
-        print('Category IDs of interest: ', self.categories_of_interest)
-        print('Car category ID: ', self.car_category_id)
-        print('Bus category ID: ', self.bus_category_id)
-        print('Truck category ID: ', self.truck_category_id)
-        print('Person category ID: ', self.person_category_id)
+                        annotation_obj["category_id"] = 4
 
+                    if annotation_obj not in self.our_interest_annotations:
+                        self.our_interest_annotations.append(annotation_obj)
+                        
     def display_info(self):
         print('Dataset Info')
         print('==================')
@@ -160,6 +180,8 @@ class CocoDataset():
         print('Bus category ID: ', self.bus_category_id, ' #\(buses\): ', self.bus_count)
         print('Truck category ID: ', self.truck_category_id, ' #\(trucks\): ', self.truck_count)
         print('Person category ID: ', self.person_category_id, ' #\(persons\): ', self.person_count)
+        print('Num images of interest: ', len(self.our_interest_images), ' num annotations of interest: ', len(self.our_interest_annotations), " total_counts: ",
+              self.car_count + self.bus_count + self.truck_count + self.person_count)
         
     def display_image(self, image_id, show_bbox=True, show_polys=True, show_crowds=True):
         print('Image')
@@ -312,11 +334,11 @@ if __name__ == "__main__":
             cjc.put_licenses(coco_dataset.licenses)
             #print(coco_dataset.super_categories)
             cjc.put_super_categories(custom_super_categories)
-            
+            cjc.put_images_info(coco_dataset.our_interest_images)
+            cjc.put_annotations_info(coco_dataset.our_interest_annotations)
         #coco_dataset.display_info()
         #coco_dataset.display_licenses()
-        coco_dataset.display_categories()
-        #coco_dataset.display_ourinterest_info()
+        #coco_dataset.display_categories()
+        coco_dataset.display_ourinterest_info()
 
-    #cjc.print_dataset_info()
     cjc.main(args)
