@@ -156,7 +156,19 @@ coco2017_testdev_dataset = dataset_base.copy({
 })
 
 
+my_vehicle_dataset = dataset_base.copy({
+    'name': 'My Vehicle Dataset',
 
+    # Training images and annotations
+    'train_images': '/mnt/bigdrive1/cnn/cocosynth/datasets/vehicle_dataset2_synthetic/train/images',
+    'train_info':   '/mnt/bigdrive1/cnn/cocosynth/datasets/vehicle_dataset2_synthetic/train/coco_instances.json',
+
+    'valid_images': '/mnt/bigdrive1/cnn/cocosynth/datasets/vehicle_dataset2_synthetic/val/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/cocosynth/datasets/vehicle_dataset2_synthetic/val/coco_instances.json',
+
+    'has_gt': True,
+    'class_names': ('car', 'truck')
+})
 
 
 # ----------------------- TRANSFORMS ----------------------- #
@@ -673,6 +685,25 @@ yolact_resnet50_config = yolact_base_config.copy({
 })
 
 
+yolact_im400_myvehicles_config = yolact_base_config.copy({
+    'name': 'yolact_im400_myvehicles',
+
+    # Dataset stuff
+    'dataset': my_vehicle_dataset,
+    'num_classes': len(my_vehicle_dataset.class_names) + 1,
+
+    'max_size': 400,
+
+    # Training params
+    #'lr_steps': (280000, 600000, 700000, 750000),
+    #'max_iter': 800000,
+    'lr_steps': (2800, 6000, 7000, 7500),
+    'max_iter': 8000,
+
+    'backbone': yolact_base_config.backbone.copy({
+        'pred_scales': [[int(x[0] / yolact_base_config.max_size * 400)] for x in yolact_base_config.backbone.pred_scales],
+    }),
+})
 
 
 

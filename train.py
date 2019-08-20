@@ -71,7 +71,7 @@ args = parser.parse_args()
 
 if args.config is not None:
     set_cfg(args.config)
-
+    
 if args.dataset is not None:
     set_dataset(args.dataset)
 
@@ -184,7 +184,9 @@ def train():
 
     epoch_size = len(dataset) // args.batch_size
     num_epochs = math.ceil(cfg.max_iter / epoch_size)
-    
+    print("= EPOCH SIZE: ", epoch_size, " | len(dataset): ", len(dataset), " | batch_size: ", args.batch_size)
+    print("= Num. epochs: ", num_epochs, " | max_iter: ", cfg.max_iter)
+        
     # Which learning rate adjustment step are we on? lr' = lr * gamma ^ step_index
     step_index = 0
 
