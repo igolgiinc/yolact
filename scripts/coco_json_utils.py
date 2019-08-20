@@ -198,6 +198,21 @@ class AnnotationJsonUtils():
         return a_id
 
 class CocoJsonCreator():
+
+    def __init__(self, skip_cmdline_args=False):
+        if skip_cmdline_args:
+            self._init_dataset_info()
+            self._init_mask_definitions()
+
+    def _init_dataset_info(self):
+        self.dataset_info = {}
+
+    def _init_mask_definitions(self):
+        self.mask_definitions = {}
+        
+    def print_dataset_info(self):
+        print("Dataset info: ", self.dataset_info)
+        
     def validate_and_process_args(self, args):
         """ Validates the arguments coming in from the command line and performs
             initial processing
@@ -241,18 +256,42 @@ class CocoJsonCreator():
             date_created = info_json['date_created']
         )
 
+    def put_info(self, info_json):
+        self.dataset_info['info'] = info_json
+        
     def create_licenses(self):
         """ Creates the "license" portion of the COCO json
         """
-        license_json = self.dataset_info['license']
-        lju = LicenseJsonUtils()
-        lic = lju.create_coco_license(
-            url = license_json['url'],
-            license_id = license_json['id'],
-            name = license_json['name']
-        )
-        return [lic]
+        lic_list = []
+        if (len(self.dataset_info['license']) == 1):
+            license_json = self.dataset_info['license']
+            lju = LicenseJsonUtils()
+            lic = lju.create_coco_license(
+                url = license_json['url'],
+                license_id = license_json['id'],
+                name = license_json['name']
+            )
+            lic_list.append(lic)
+        elif (len(self.dataset_info['license']) > 1):
 
+            lic_list = []
+            for license_json in self.dataset_info['license']:
+                lju = LicenseJsonUtils()
+                lic = lju.create_coco_license(
+                    url = license_json['url'],
+                    license_id = license_json['id'],
+                    name = license_json['name']
+                )
+                lic_list.append(lic)
+                
+        return lic_list
+
+    def put_licenses(self, licenses_json):
+        self.dataset_info['license'] = licenses_json
+
+    def put_super_categories(self, super_categories_json):
+        self.mask_definitions['super_categories'] = super_categories_json
+        
     def create_categories(self):
         """ Creates the "categories" portion of the COCO json
         Returns:
@@ -267,6 +306,7 @@ class CocoJsonCreator():
 
         super_categories = self.mask_definitions['super_categories']
         for super_category, _categories in super_categories.items():
+            #print(_categories)
             for category_name in _categories:
                 categories.append(cju.create_coco_category(super_category, category_id, category_name))
                 category_ids_by_name[category_name] = category_id
@@ -312,27 +352,27 @@ class CocoJsonCreator():
         return image_objs, annotation_objs
 
     def main(self, args):
-        self.validate_and_process_args(args)
+        #self.validate_and_process_args(args)
 
         info = self.create_info()
         licenses = self.create_licenses()
         categories, category_ids_by_name = self.create_categories()
-        images, annotations = self.create_images_and_annotations(category_ids_by_name)
+        #images, annotations = self.create_images_and_annotations(category_ids_by_name)
 
         master_obj = {
             'info': info,
             'licenses': licenses,
-            'images': images,
-            'annotations': annotations,
+            #'images': images,
+            #'annotations': annotations,
             'categories': categories
         }
 
         # Write the json to a file
-        output_path = Path(self.dataset_dir) / 'coco_instances.json'
+        output_path = Path(args.output_json_file)
         with open(output_path, 'w+') as output_file:
             json.dump(master_obj, output_file)
 
-        print(f'Annotations successfully written to file:\n{output_path}')
+        print(f'Annotations successfully written to file: {output_path}')
 
 if __name__ == "__main__":
     import argparse

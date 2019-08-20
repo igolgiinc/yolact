@@ -7,6 +7,7 @@ from PIL import Image as PILImage
 import numpy as np
 from math import trunc
 import sys
+import coco_json_utils
 
 # # CocoDataset Class
 # This class imports and processes an annotations JSON file that you will specify when creating an instance of the class.
@@ -290,24 +291,32 @@ if __name__ == "__main__":
                         help='Comma-separated image paths to combine')
     parser.add_argument("-of", "--output_json_file", dest="output_json_file",
                         help="path to the combined output JSON file")
-
+    # parser.add_argument("--mode", type=str, help="Mode to operate in. Should be one of 'reduce' or 'combine'")
+    
     args = parser.parse_args()
-    print("Cmdline args: ", args)
+    #print("Cmdline args: ", args)
     input_json_files = args.input_json_files.split(",")
     image_paths = args.image_paths.split(",")
     if len(input_json_files) != len(image_paths):
         print("= Something wrong. Please specify 1 image path for every input JSON file")
         sys.exit(-1)
-        
-    '''
-    #instances_json_path = "/mnt/bigdrive1/cnn/yolact/data/coco/annotations/instances_val2017.json"
-    #images_path = "/mnt/bigdrive1/cnn/yolact/data/coco/images"
-    '''
+    
+    cjc = coco_json_utils.CocoJsonCreator(skip_cmdline_args=True)
+
+    custom_super_categories = {"person": {'person'},
+                               "vehicle": {'car', 'bus', 'truck'}}
     for idx,json_path in enumerate(input_json_files):
         coco_dataset = CocoDataset(json_path, image_paths[idx])
-        coco_dataset.display_info()
+        if "2017" in json_path:
+            cjc.put_info(coco_dataset.info)
+            cjc.put_licenses(coco_dataset.licenses)
+            #print(coco_dataset.super_categories)
+            cjc.put_super_categories(custom_super_categories)
+            
+        #coco_dataset.display_info()
         #coco_dataset.display_licenses()
         coco_dataset.display_categories()
-        coco_dataset.display_ourinterest_info()
-        
+        #coco_dataset.display_ourinterest_info()
 
+    #cjc.print_dataset_info()
+    cjc.main(args)
