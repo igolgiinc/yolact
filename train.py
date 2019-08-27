@@ -71,6 +71,7 @@ args = parser.parse_args()
 
 if args.config is not None:
     set_cfg(args.config)
+    print(cfg.backbone)
     
 if args.dataset is not None:
     set_dataset(args.dataset)
