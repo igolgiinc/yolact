@@ -8,6 +8,7 @@ import numpy as np
 from math import trunc
 import sys
 import coco_json_utils
+from tqdm import tqdm
 
 # # CocoDataset Class
 # This class imports and processes an annotations JSON file that you will specify when creating an instance of the class.
@@ -52,11 +53,21 @@ class CocoDataset():
     def _process_categories(self):
         self.categories = dict()
         self.super_categories = dict()
+        self.coco_categories = []
+        self.coco_category_ids_by_name = dict()
         
         for category in self.coco['categories']:
             cat_id = category['id']
             super_category = category['supercategory']
+            cat_name = category['name']
             
+            self.coco_categories.append({'supercategory': super_category,
+                                         'id': cat_id,
+                                         'name': cat_name})
+
+            if cat_name not in self.coco_category_ids_by_name:
+                self.coco_category_ids_by_name[cat_name] = cat_id
+                
             # Add category to categories dict
             if cat_id not in self.categories:
                 self.categories[cat_id] = category
@@ -81,7 +92,7 @@ class CocoDataset():
                 self.truck_category_id = cat_id
             elif category["name"] == "person":
                 self.categories_of_interest.append(cat_id)
-                self.person_category_id = cat_id
+                self.person_category_id = cat_id            
 
         print("Total categories (original): ", len(self.coco['categories']))
         
@@ -118,7 +129,7 @@ class CocoDataset():
         #custom_super_categories = {"person": {'person'},
         #"vehicle": {'car', 'bus', 'truck'}}
 
-        for key, items in self.segmentations.items():
+        for key, items in tqdm(self.segmentations.items()):
             for item in items:
                 if item["category_id"] in self.categories_of_interest:
                     
@@ -130,19 +141,19 @@ class CocoDataset():
 
                     if item["category_id"] == self.person_category_id:
                         self.person_count += 1
-                        annotation_obj["category_id"] = 1
+                        #annotation_obj["category_id"] = 1
                     elif item["category_id"] == self.car_category_id:
                         self.car_count += 1
                         self.vehicle_count += 1
-                        annotation_obj["category_id"] = 2
+                        #annotation_obj["category_id"] = 2
                     elif item["category_id"] == self.bus_category_id:
                         self.bus_count += 1
                         self.vehicle_count += 1
-                        annotation_obj["category_id"] = 3
+                        #annotation_obj["category_id"] = 3
                     elif item["category_id"] == self.truck_category_id:
                         self.truck_count += 1
                         self.vehicle_count += 1
-                        annotation_obj["category_id"] = 4
+                        #annotation_obj["category_id"] = 4
 
                     if annotation_obj not in self.our_interest_annotations:
                         self.our_interest_annotations.append(annotation_obj)
@@ -166,11 +177,11 @@ class CocoDataset():
         for sc_name, set_of_cat_ids in self.super_categories.items():
             #print(f'  super_category: {sc_name}')
             for cat_id in set_of_cat_ids:
-                if cat_id in self.categories_of_interest:
-                    print(f'  super_category: {sc_name}')
-                    print(f'    id {cat_id}: {self.categories[cat_id]["name"]}'
-                    )
-                    print('')
+                #if cat_id in self.categories_of_interest:
+                print(f'  super_category: {sc_name}')
+                print(f'    id {cat_id}: {self.categories[cat_id]["name"]}'
+                )
+                print('')
     
     def display_ourinterest_info(self):
         print('Our Interest Counts Info')
@@ -305,40 +316,40 @@ class CocoDataset():
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Combine COCO JSON from one or more files into a single new file")
+    parser = argparse.ArgumentParser(description="Generate COCO JSON for reduced set of categories")
 
-    parser.add_argument("-if", "--input_json_files",  type=str, dest="input_json_files",
-                        help='Comma-separated COCO json files to combine')
-    parser.add_argument("-ip", "--image_paths", type=str, dest="image_paths",
-                        help='Comma-separated image paths to combine')
+    parser.add_argument("-if", "--input_json_file",  type=str, dest="input_json_file",
+                        help='Base COCO json file to use as reference')
+    parser.add_argument("-ip", "--image_path", type=str, dest="image_path",
+                        help='Image path to display image if needed (jupyter notebook use)')
     parser.add_argument("-of", "--output_json_file", dest="output_json_file",
                         help="path to the combined output JSON file")
-    # parser.add_argument("--mode", type=str, help="Mode to operate in. Should be one of 'reduce' or 'combine'")
     
     args = parser.parse_args()
     #print("Cmdline args: ", args)
-    input_json_files = args.input_json_files.split(",")
-    image_paths = args.image_paths.split(",")
-    if len(input_json_files) != len(image_paths):
-        print("= Something wrong. Please specify 1 image path for every input JSON file")
-        sys.exit(-1)
+    input_json_file = args.input_json_file
+    image_path = args.image_path
     
     cjc = coco_json_utils.CocoJsonCreator(skip_cmdline_args=True)
 
     custom_super_categories = {"person": {'person'},
                                "vehicle": {'car', 'bus', 'truck'}}
-    for idx,json_path in enumerate(input_json_files):
-        coco_dataset = CocoDataset(json_path, image_paths[idx])
-        if "2017" in json_path:
-            cjc.put_info(coco_dataset.info)
-            cjc.put_licenses(coco_dataset.licenses)
-            #print(coco_dataset.super_categories)
-            cjc.put_super_categories(custom_super_categories)
-            cjc.put_images_info(coco_dataset.our_interest_images)
-            cjc.put_annotations_info(coco_dataset.our_interest_annotations)
-        #coco_dataset.display_info()
-        #coco_dataset.display_licenses()
-        #coco_dataset.display_categories()
-        coco_dataset.display_ourinterest_info()
 
+    coco_dataset = CocoDataset(input_json_file, image_path)
+    #if "2017" in json_path:
+    print("= Putting info, licenses")
+    cjc.put_info(coco_dataset.info)
+    cjc.put_licenses(coco_dataset.licenses)
+    #print(coco_dataset.super_categories)
+    #cjc.put_super_categories(custom_super_categories)
+    print("= Putting categories, images, annotations info")
+    cjc.put_categories_info(coco_dataset.coco_categories, coco_dataset.coco_category_ids_by_name)
+    cjc.put_images_info(coco_dataset.our_interest_images)
+    cjc.put_annotations_info(coco_dataset.our_interest_annotations)
+    #coco_dataset.display_info()
+    #coco_dataset.display_licenses()
+    coco_dataset.display_categories()
+    coco_dataset.display_ourinterest_info()
+
+    print("= About to enter cjc.main")
     cjc.main(args)

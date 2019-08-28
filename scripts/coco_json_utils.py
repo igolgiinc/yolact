@@ -7,6 +7,7 @@ from tqdm import tqdm
 from skimage import measure, io
 from shapely.geometry import Polygon, MultiPolygon
 from PIL import Image
+from tqdm import tqdm
 
 class InfoJsonUtils():
     """ Creates an info object to describe a COCO dataset
@@ -206,6 +207,8 @@ class CocoJsonCreator():
             self.skip_cmdline_args = True
             self.image_objs = []
             self.annotation_objs = []
+            self.categories_list = None
+            self.category_ids_by_name_list = None
         else:
             self.skip_cmdline_args = False
             
@@ -304,19 +307,23 @@ class CocoJsonCreator():
             category_ids_by_name: a lookup dictionary for category ids based
                 on the name of the category
         """
-        cju = CategoryJsonUtils()
         categories = []
         category_ids_by_name = dict()
-        category_id = 1 # 0 is reserved for the background
+        if not (self.categories_list) and not (self.category_ids_by_name_list):
+            cju = CategoryJsonUtils()
+            category_id = 1 # 0 is reserved for the background
 
-        super_categories = self.mask_definitions['super_categories']
-        for super_category, _categories in super_categories.items():
-            #print(_categories)
-            for category_name in _categories:
-                categories.append(cju.create_coco_category(super_category, category_id, category_name))
-                category_ids_by_name[category_name] = category_id
-                category_id += 1
-
+            super_categories = self.mask_definitions['super_categories']
+            for super_category, _categories in super_categories.items():
+                #print(_categories)
+                for category_name in _categories:
+                    categories.append(cju.create_coco_category(super_category, category_id, category_name))
+                    category_ids_by_name[category_name] = category_id
+                    category_id += 1
+        else:
+            categories = self.categories_list
+            category_ids_by_name = self.category_ids_by_name_list
+            
         return categories, category_ids_by_name
 
     def create_images_and_annotations(self, category_ids_by_name):
@@ -361,6 +368,10 @@ class CocoJsonCreator():
 
     def put_annotations_info(self, annotation_objs):
         self.annotation_objs = annotation_objs
+
+    def put_categories_info(self, categories_list, category_ids_by_name_list):
+        self.categories_list = categories_list
+        self.category_ids_by_name_list = category_ids_by_name_list
         
     def main(self, args):
         #self.validate_and_process_args(args)
@@ -382,6 +393,7 @@ class CocoJsonCreator():
         }
 
         # Write the json to a file
+        print("= About to write to %s" % (args.output_json_file))
         output_path = Path(args.output_json_file)
         with open(output_path, 'w+') as output_file:
             json.dump(master_obj, output_file)
