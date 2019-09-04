@@ -323,7 +323,7 @@ if __name__ == "__main__":
     parser.add_argument("-ip", "--image_path", type=str, dest="image_path",
                         help='Image path to display image if needed (jupyter notebook use)')
     parser.add_argument("-of", "--output_json_file", dest="output_json_file",
-                        help="path to the combined output JSON file")
+                        help="Path to the reduced output JSON file")
     
     args = parser.parse_args()
     #print("Cmdline args: ", args)
