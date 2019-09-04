@@ -71,7 +71,7 @@ args = parser.parse_args()
 
 if args.config is not None:
     set_cfg(args.config)
-    print(cfg.backbone)
+    print("cfg_name: ", cfg.name, "backbone: ", cfg.backbone, " | num_classes: ", cfg.num_classes, " | lr: ", cfg.lr)
     
 if args.dataset is not None:
     set_dataset(args.dataset)
