@@ -184,6 +184,28 @@ coco2017_reduced_dataset = dataset_base.copy({
     'class_names': ('person', 'car', 'bus', 'truck')
 })
 
+# Using only COCO annotation data for cars, trucks, buses and persons
+coco2017_reduced2_dataset = dataset_base.copy({
+    'name': 'COCO 2017 reduced2 dataset',
+
+    # Training images and annotations
+    'train_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/reduced_instances_train2017-2.json',
+    'valid_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/reduced_instances_val2017-2.json',
+
+    'label_map': COCO_LABEL_MAP
+})
+
+# Using only COCO annotation data for cars, trucks, buses and persons + our synthetic data for cars, trucks
+coco2017_combined_dataset = dataset_base.copy({
+    'name': 'COCO 2017 combined dataset',
+
+    # Training images and annotations
+    'train_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/reduced_instances_train2017-3.json',
+    'valid_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/reduced_instances_val2017-3.json',
+
+    'label_map': COCO_LABEL_MAP
+})
+
 
 # ----------------------- TRANSFORMS ----------------------- #
 
@@ -767,6 +789,107 @@ yolact_reduced_config = coco_base_config.copy({
 
 })
 
+# Config for reduced COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
+yolact_reduced2_config = coco_base_config.copy({
+    'name': 'yolact_reduced2',
+
+    # Dataset stuff
+    'dataset': coco2017_reduced2_dataset,
+    'num_classes': len(coco2017_reduced2_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-4,
+    'lr_steps': (70000, 150000, 175000, 187500),
+    'max_iter': 200000,
+
+    # Backbone Settings
+    'backbone': resnet101_backbone.copy({
+        'selected_layers': list(range(1, 4)),
+        'use_pixel_scales': True,
+        'preapply_sqrt': False,
+        'use_square_anchors': True, # This is for backward compatability with a bug
+
+        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
+        'pred_scales': [[24], [48], [96], [192], [384]],
+    }),
+
+    # FPN Settings
+    'fpn': fpn_base.copy({
+        'use_conv_downsample': True,
+        'num_downsample': 2,
+    }),
+
+    # Mask Settings
+    'mask_type': mask_type.lincomb,
+    'mask_alpha': 6.125,
+    'mask_proto_src': 0,
+    'mask_proto_net': [(256, 3, {'padding': 1})] * 3 + [(None, -2, {}), (256, 3, {'padding': 1})] + [(32, 1, {})],
+    'mask_proto_normalize_emulate_roi_pooling': True,
+
+    # Other stuff
+    'share_prediction_module': True,
+    'extra_head_net': [(256, 3, {'padding': 1})],
+
+    'positive_iou_threshold': 0.5,
+    'negative_iou_threshold': 0.4,
+
+    'crowd_iou_threshold': 0.7,
+
+    'use_semantic_segmentation_loss': True,
+
+})
+
+# Config for combined COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
+# from COCO-2017 as well as our synthetic dataset 
+yolact_combined_config = coco_base_config.copy({
+    'name': 'yolact_combined',
+
+    # Dataset stuff
+    'dataset': coco2017_combined_dataset,
+    'num_classes': len(coco2017_combined_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-4,
+    'lr_steps': (70000, 150000, 175000, 187500),
+    'max_iter': 200000,
+
+    # Backbone Settings
+    'backbone': resnet101_backbone.copy({
+        'selected_layers': list(range(1, 4)),
+        'use_pixel_scales': True,
+        'preapply_sqrt': False,
+        'use_square_anchors': True, # This is for backward compatability with a bug
+
+        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
+        'pred_scales': [[24], [48], [96], [192], [384]],
+    }),
+
+    # FPN Settings
+    'fpn': fpn_base.copy({
+        'use_conv_downsample': True,
+        'num_downsample': 2,
+    }),
+
+    # Mask Settings
+    'mask_type': mask_type.lincomb,
+    'mask_alpha': 6.125,
+    'mask_proto_src': 0,
+    'mask_proto_net': [(256, 3, {'padding': 1})] * 3 + [(None, -2, {}), (256, 3, {'padding': 1})] + [(32, 1, {})],
+    'mask_proto_normalize_emulate_roi_pooling': True,
+
+    # Other stuff
+    'share_prediction_module': True,
+    'extra_head_net': [(256, 3, {'padding': 1})],
+
+    'positive_iou_threshold': 0.5,
+    'negative_iou_threshold': 0.4,
+
+    'crowd_iou_threshold': 0.7,
+
+    'use_semantic_segmentation_loss': True,
+
+})
+
 # Default config
 cfg = yolact_base_config.copy()
 
@@ -776,9 +899,9 @@ def set_cfg(config_name:str):
 
     # Note this is not just an eval because I'm lazy, but also because it can
     # be used like ssd300_config.copy({'max_size': 400}) for extreme fine-tuning
-    print("set_cfg 1:", cfg.backbone)
+    #print("set_cfg 1:", cfg.backbone)
     cfg.replace(eval(config_name))
-    print("set_cfg 2:", cfg.backbone)
+    #print("set_cfg 2:", cfg.backbone)
     
 def set_dataset(dataset_name:str):
     """ Sets the dataset of the current config. """
