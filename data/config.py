@@ -170,6 +170,9 @@ my_vehicle_dataset = dataset_base.copy({
     'class_names': ('car', 'truck')
 })
 
+# Using only COCO annotation data for cars, trucks, buses and persons
+# persons, cars, buses, trucks have category IDs 1, 2, 3 4 (sequential)
+# data for training and validation is JUST the info. from COCO-2017 train/val
 coco2017_reduced_dataset = dataset_base.copy({
     'name': 'COCO 2017 reduced dataset',
 
@@ -185,6 +188,8 @@ coco2017_reduced_dataset = dataset_base.copy({
 })
 
 # Using only COCO annotation data for cars, trucks, buses and persons
+# persons, cars, buses, trucks have category IDs the same as in COCO-2017 train/val
+# data for training and validation is JUST the info. from COCO-2017 train/val
 coco2017_reduced2_dataset = dataset_base.copy({
     'name': 'COCO 2017 reduced2 dataset',
 
@@ -195,7 +200,10 @@ coco2017_reduced2_dataset = dataset_base.copy({
     'label_map': COCO_LABEL_MAP
 })
 
-# Using only COCO annotation data for cars, trucks, buses and persons + our synthetic data for cars, trucks
+# Using COCO annotation data for cars, trucks, buses and persons
+# persons, cars, buses, trucks have category IDs the same as in COCO-2017 train/val
+# data for training and validation was info. from COCO-2017 train/val + our synthetic dataset for cars and trucks
+# Model generated knocked off the first gradient and performance deteriorated for small objects
 coco2017_combined_dataset = dataset_base.copy({
     'name': 'COCO 2017 combined dataset',
 
@@ -204,6 +212,20 @@ coco2017_combined_dataset = dataset_base.copy({
     'valid_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/reduced_instances_val2017-3.json',
 
     'label_map': COCO_LABEL_MAP
+})
+
+# Using COCO annotation data for cars, trucks, buses and persons
+# persons, cars, buses, trucks have category IDs 1, 2, 3 4 (sequential)
+# data for training and validation was info. from COCO-2017 train/val + our synthetic dataset for trucks
+coco2017_combined2_dataset = dataset_base.copy({
+    'name': 'COCO 2017 combined2 dataset',
+
+    # Training images and annotations
+    'train_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/combined_instances_train2017-2.json',
+    'valid_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/combined_instances_val2017-2.json',
+
+    'has_gt': True,
+    'class_names': ('person', 'car', 'bus', 'truck')
 })
 
 
@@ -748,6 +770,9 @@ yolact_reduced_config = coco_base_config.copy({
     'dataset': coco2017_reduced_dataset,
     'num_classes': len(coco2017_reduced_dataset.class_names) + 1,
 
+    # Image Size
+    'max_size': 550,
+
     # Training params
     'lr_steps': (280000, 600000, 700000, 750000),
     'max_iter': 800000,
@@ -797,6 +822,9 @@ yolact_reduced2_config = coco_base_config.copy({
     'dataset': coco2017_reduced2_dataset,
     'num_classes': len(coco2017_reduced2_dataset.class_names) + 1,
 
+    # Image Size
+    'max_size': 550,
+
     # Training params
     'lr': 1e-4,
     'lr_steps': (70000, 150000, 175000, 187500),
@@ -840,13 +868,18 @@ yolact_reduced2_config = coco_base_config.copy({
 })
 
 # Config for combined COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
-# from COCO-2017 as well as our synthetic dataset 
+# from COCO-2017 as well as our synthetic dataset for cars and trucks
+# Model generated using fine-tuning knocked off first gradient and was worse in detecting small objects relative to the
+# base model yolact_base54_800000.pth
 yolact_combined_config = coco_base_config.copy({
     'name': 'yolact_combined',
 
     # Dataset stuff
     'dataset': coco2017_combined_dataset,
     'num_classes': len(coco2017_combined_dataset.class_names) + 1,
+
+    # Image Size
+    'max_size': 550,
 
     # Training params
     'lr': 1e-4,
@@ -887,6 +920,34 @@ yolact_combined_config = coco_base_config.copy({
     'crowd_iou_threshold': 0.7,
 
     'use_semantic_segmentation_loss': True,
+
+})
+
+# Config for combined COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
+# from COCO-2017 as well as our synthetic dataset for cars and trucks
+# Model generated using fine-tuning knocked off first gradient and was worse in detecting small objects relative to the
+# base model yolact_base54_800000.pth
+yolact_combined2_config = yolact_base_config.copy({
+
+    'name': 'yolact_combined2',
+
+    # Dataset stuff
+    'dataset': coco2017_combined2_dataset,
+    'num_classes': len(coco2017_combined2_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-4,
+    'lr_steps': (70000, 150000, 175000, 187500),
+    'max_iter': 200000,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    'bbox_alpha': 0.0,
+    'mask_alpha': 0.0,
+    'use_semantic_segmentation_loss': False,
+    'semantic_segmentation_alpha': 0,
 
 })
 
