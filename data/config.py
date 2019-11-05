@@ -693,6 +693,8 @@ yolact_base_config = coco_base_config.copy({
     'crowd_iou_threshold': 0.7,
 
     'use_semantic_segmentation_loss': True,
+
+    'class_layer_only': False,
 })
 
 yolact_im400_config = yolact_base_config.copy({
@@ -763,108 +765,53 @@ yolact_im400_myvehicles_config = yolact_base_config.copy({
     }),
 })
 
-yolact_reduced_config = coco_base_config.copy({
+yolact_reduced_config = yolact_base_config.copy({
+
     'name': 'yolact_reduced',
 
     # Dataset stuff
     'dataset': coco2017_reduced_dataset,
     'num_classes': len(coco2017_reduced_dataset.class_names) + 1,
 
-    # Image Size
-    'max_size': 550,
-
     # Training params
-    'lr_steps': (280000, 600000, 700000, 750000),
-    'max_iter': 800000,
+    'lr': 1e-3,
+    'lr_steps': (70000, 150000, 175000, 187500),
+    'max_iter': 200000,
 
-    # Backbone Settings
-    'backbone': resnet101_backbone.copy({
-        'selected_layers': list(range(1, 4)),
-        'use_pixel_scales': True,
-        'preapply_sqrt': False,
-        'use_square_anchors': True, # This is for backward compatability with a bug
+    #'lr_steps': (280000, 600000, 700000, 750000),
+    #'max_iter': 800000,
 
-        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
-        'pred_scales': [[24], [48], [96], [192], [384]],
-    }),
-
-    # FPN Settings
-    'fpn': fpn_base.copy({
-        'use_conv_downsample': True,
-        'num_downsample': 2,
-    }),
-
-    # Mask Settings
-    'mask_type': mask_type.lincomb,
-    'mask_alpha': 6.125,
-    'mask_proto_src': 0,
-    'mask_proto_net': [(256, 3, {'padding': 1})] * 3 + [(None, -2, {}), (256, 3, {'padding': 1})] + [(32, 1, {})],
-    'mask_proto_normalize_emulate_roi_pooling': True,
-
-    # Other stuff
-    'share_prediction_module': True,
-    'extra_head_net': [(256, 3, {'padding': 1})],
-
-    'positive_iou_threshold': 0.5,
-    'negative_iou_threshold': 0.4,
-
-    'crowd_iou_threshold': 0.7,
-
-    'use_semantic_segmentation_loss': True,
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
 
 })
 
 # Config for reduced COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
-yolact_reduced2_config = coco_base_config.copy({
+yolact_reduced2_config = yolact_base_config.copy({
+
     'name': 'yolact_reduced2',
 
     # Dataset stuff
     'dataset': coco2017_reduced2_dataset,
     'num_classes': len(coco2017_reduced2_dataset.class_names) + 1,
 
-    # Image Size
-    'max_size': 550,
-
     # Training params
     'lr': 1e-4,
     'lr_steps': (70000, 150000, 175000, 187500),
     'max_iter': 200000,
 
-    # Backbone Settings
-    'backbone': resnet101_backbone.copy({
-        'selected_layers': list(range(1, 4)),
-        'use_pixel_scales': True,
-        'preapply_sqrt': False,
-        'use_square_anchors': True, # This is for backward compatability with a bug
-
-        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
-        'pred_scales': [[24], [48], [96], [192], [384]],
-    }),
-
-    # FPN Settings
-    'fpn': fpn_base.copy({
-        'use_conv_downsample': True,
-        'num_downsample': 2,
-    }),
-
-    # Mask Settings
-    'mask_type': mask_type.lincomb,
-    'mask_alpha': 6.125,
-    'mask_proto_src': 0,
-    'mask_proto_net': [(256, 3, {'padding': 1})] * 3 + [(None, -2, {}), (256, 3, {'padding': 1})] + [(32, 1, {})],
-    'mask_proto_normalize_emulate_roi_pooling': True,
-
-    # Other stuff
-    'share_prediction_module': True,
-    'extra_head_net': [(256, 3, {'padding': 1})],
-
-    'positive_iou_threshold': 0.5,
-    'negative_iou_threshold': 0.4,
-
-    'crowd_iou_threshold': 0.7,
-
-    'use_semantic_segmentation_loss': True,
-
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    # 'bbox_alpha': 0.0,
+    # 'mask_alpha': 0.0,
+    # 'use_semantic_segmentation_loss': False,
+    # 'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'print_detach': True,
+    'print_loss_adj': True,
+    
 })
 
 # Config for combined COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
@@ -936,7 +883,7 @@ yolact_combined2_config = yolact_base_config.copy({
     'num_classes': len(coco2017_combined2_dataset.class_names) + 1,
 
     # Training params
-    'lr': 1e-4,
+    'lr': 1e-3,
     'lr_steps': (70000, 150000, 175000, 187500),
     'max_iter': 200000,
 
@@ -944,10 +891,34 @@ yolact_combined2_config = yolact_base_config.copy({
     'freeze_bn': True,
     
     # Loss settings
-    'bbox_alpha': 0.0,
-    'mask_alpha': 0.0,
     'use_semantic_segmentation_loss': False,
     'semantic_segmentation_alpha': 0,
+
+})
+
+# Config for reduced COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
+yolact_reduced2_classonly_config = yolact_base_config.copy({
+
+    'name': 'yolact_reduced2_classonly',
+
+    # Dataset stuff
+    'dataset': coco2017_reduced2_dataset,
+    'num_classes': len(coco2017_reduced2_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    'lr_steps': (70000, 150000, 175000, 187500),
+    'max_iter': 200000,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    # 'use_semantic_segmentation_loss': False,
+    # 'semantic_segmentation_alpha': 0,
+    'class_layer_only': True,
+    'print_detach': True,
+    'print_loss_adj': True,
 
 })
 

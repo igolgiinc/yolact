@@ -260,7 +260,16 @@ def train():
                 losses = criterion(out, wrapper, wrapper.make_mask())
                 
                 losses = { k: v.mean() for k,v in losses.items() } # Mean here because Dataparallel
-                loss = sum([losses[k] for k in losses])
+                if cfg.class_layer_only:
+                    if cfg.print_loss_adj:
+                        print("= Train class layer only, not propagating box, mask and segmentation losses further")
+                        cfg.print_loss_adj = False
+                    loss = sum([losses[k] for k in losses if k not in ['M','B','S']])
+                else:
+                    if cfg.print_loss_adj:
+                        print("= Train all layers, propagating box, mask and segmentation losses further")
+                        cfg.print_loss_adj = False
+                    loss = sum([losses[k] for k in losses])
                 
                 # Backprop
                 loss.backward() # Do this to free up vram even if loss is not finite
