@@ -317,9 +317,17 @@ class CocoJsonCreator():
             for super_category, _categories in super_categories.items():
                 #print(_categories)
                 for category_name in _categories:
+                    if category_name == "person":
+                        category_id = 1
+                    elif category_name == "car":
+                        category_id = 2
+                    elif category_name == "bus":
+                        category_id = 3
+                    elif category_name == "truck":
+                        category_id = 4
                     categories.append(cju.create_coco_category(super_category, category_id, category_name))
                     category_ids_by_name[category_name] = category_id
-                    category_id += 1
+                    #category_id += 1
         else:
             categories = self.categories_list
             category_ids_by_name = self.category_ids_by_name_list

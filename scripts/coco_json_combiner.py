@@ -93,7 +93,9 @@ class CocoDataset():
             elif category["name"] == "person":
                 self.categories_of_interest.append(cat_id)
                 self.person_category_id = cat_id            
-
+            else:
+                self.categories_of_interest.append(cat_id)
+                
         print("Total categories (original): ", len(self.coco['categories']))
         
     def _process_images(self):
@@ -365,6 +367,7 @@ if __name__ == "__main__":
     cjc.put_categories_info(coco_dataset_base.coco_categories, coco_dataset_base.coco_category_ids_by_name)
 
     print("= Combining images and annotations info")
+    print("= Len(base_images): ", len(coco_dataset_base.our_interest_images), " | len(dataset_to_combine): ", len(coco_dataset_to_combine.our_interest_images))
     combined_images_of_interest = coco_dataset_base.our_interest_images + coco_dataset_to_combine.our_interest_images
     combined_annotations_of_interest = coco_dataset_base.our_interest_annotations + coco_dataset_to_combine.our_interest_annotations
     

@@ -141,19 +141,19 @@ class CocoDataset():
 
                     if item["category_id"] == self.person_category_id:
                         self.person_count += 1
-                        #annotation_obj["category_id"] = 1
+                        annotation_obj["category_id"] = 1
                     elif item["category_id"] == self.car_category_id:
                         self.car_count += 1
                         self.vehicle_count += 1
-                        #annotation_obj["category_id"] = 2
+                        annotation_obj["category_id"] = 2
                     elif item["category_id"] == self.bus_category_id:
                         self.bus_count += 1
                         self.vehicle_count += 1
-                        #annotation_obj["category_id"] = 3
+                        annotation_obj["category_id"] = 3
                     elif item["category_id"] == self.truck_category_id:
                         self.truck_count += 1
                         self.vehicle_count += 1
-                        #annotation_obj["category_id"] = 4
+                        annotation_obj["category_id"] = 4
 
                     if annotation_obj not in self.our_interest_annotations:
                         self.our_interest_annotations.append(annotation_obj)
@@ -340,10 +340,10 @@ if __name__ == "__main__":
     print("= Putting info, licenses")
     cjc.put_info(coco_dataset.info)
     cjc.put_licenses(coco_dataset.licenses)
-    #print(coco_dataset.super_categories)
-    #cjc.put_super_categories(custom_super_categories)
     print("= Putting categories, images, annotations info")
-    cjc.put_categories_info(coco_dataset.coco_categories, coco_dataset.coco_category_ids_by_name)
+    print(coco_dataset.super_categories)
+    cjc.put_super_categories(custom_super_categories)
+    #cjc.put_categories_info(coco_dataset.coco_categories, coco_dataset.coco_category_ids_by_name)
     cjc.put_images_info(coco_dataset.our_interest_images)
     cjc.put_annotations_info(coco_dataset.our_interest_annotations)
     #coco_dataset.display_info()
