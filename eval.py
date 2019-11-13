@@ -35,17 +35,31 @@ from flask import request, jsonify
 from queue import Queue
 from threading import Thread, Lock
 
+# To pull files in URLs
+from urllib.parse import urlparse
+import requests
+
+# To time responses
+from timeit import default_timer as default_timeit_timer
+
 app = Flask(__name__)
 request_queue = None
 worker_thread = None
 contours_json_status_lock = None
 contours_json = {}
+start_queue_timer = None
+end_queue_timer = None
 
+@app.route("/api/v0/classify", methods = ['POST'])
 @app.route("/api/v0/classify/", methods = ['POST'])
 def handle_post():
+
+    global start_queue_timer
+    
     content = request.json
     #print(content)
     print(' * Queuing:', content)
+    start_queue_timer = default_timeit_timer()
     request_queue.put(content)
     content["id"] = 0
     contours_json_status_lock.acquire()
@@ -54,10 +68,12 @@ def handle_post():
     print(" * Set status to running")
     return jsonify(content), 201
 
+@app.route("/api/v0/classify/<classify_id>", methods = ['GET'])
 @app.route("/api/v0/classify/<classify_id>/", methods = ['GET'])
 def handle_get(classify_id):
     # print(classify_id)
-    print(" * Contours JSON in GET", json.dumps(contours_json))
+    if args.flask_debug_mode:
+        print(" * Contours JSON in GET", json.dumps(contours_json))
     contours_json_status = None
     if contours_json:
         contours_json_status_lock.acquire()
@@ -72,11 +88,51 @@ def handle_get(classify_id):
         response_json = contours_json
     return jsonify(response_json)
 
+def is_url(url):
+      try:
+              result = urlparse(url)
+              return all([result.scheme, result.netloc])
+      except ValueError:
+              return False
+
+def get_url_using_requests_lib(url_name, **kwargs):
+        response = None
+        retval_expect = 0
+        
+        try:
+            if 'stream' in kwargs and kwargs['stream'] == True:
+                response = requests.get(url_name, stream=True)
+            elif 'headers' in kwargs and kwargs['headers']:
+                response = requests.get(url_name, headers=kwargs['headers'])
+            else:
+                response = requests.get(url_name)
+        except requests.URLRequired:
+            print("Invalid URL: " + str(url_name))
+            retval_expect = -1
+        except requests.TooManyRedirects:
+            print("Too many redirects for: " + str(url_name))
+            retval_expect = -1
+        except requests.ConnectionError:
+            print("Connection error for URL: " + str(url_name))
+            retval_expect = -1
+        except requests.exceptions.RequestException:
+            print("Ambiguous error for URL: " + str(url_name))
+            retval_expect = -1
+        else:
+            if response.status_code == requests.codes.ok:
+                retval_expect = 0
+            else:
+                retval_expect = -1
+                
+        return response, retval_expect
+    
 def flask_evaluate(thread_id, net:Yolact, dataset, input_queue):
     """This is the worker thread function.
     It processes items in the queue one after
     another.
     """
+    global start_queue_timer, end_queue_timer
+    
     print(" * Inside worker thread for flask_evaluate")
 
     net.detect.use_fast_nms = args.fast_nms
@@ -85,18 +141,32 @@ def flask_evaluate(thread_id, net:Yolact, dataset, input_queue):
     while True:
         print(' * %s: Looking for the next item in queue' % thread_id)
         request_json = input_queue.get()
-        print(" * Got item from queue: ", request_json)
-        # we just pretend and sleep
-        if request_json["output_filepath"].endswith(".jpg") or request_json["output_filepath"].endswith(".png"):
-            out = request_json["output_filepath"]
+        end_queue_timer = default_timeit_timer()
+        if start_queue_timer and end_queue_timer:
+            print(" * Got item from queue in %0.4f ms: " % ((end_queue_timer - start_queue_timer) * 1000.0), request_json)
         else:
-            out = request_json["output_filepath"] + ".jpg"
+            print(" * Got item from queue: ", request_json)
 
+        start_req_handling_timer = default_timeit_timer()
+        
+        # we just pretend and sleep
+        if "output_filepath" in request_json:
+            if request_json["output_filepath"].endswith(".jpg") or request_json["output_filepath"].endswith(".png"):
+                out = request_json["output_filepath"]
+            else:
+                out = request_json["output_filepath"] + ".png"
+        else:
+            out = request_json["output_dir"] + request_json["input"].rsplit("/", 1)[1]
+            # print(" * output_filepath: %s" % (out,))
+            
         with torch.no_grad():
             evalimage(net, request_json["input"], out)
             
         input_queue.task_done()
-    
+
+        end_req_handling_timer = default_timeit_timer()
+        print(" * Request handled in %0.4f ms" % ((end_req_handling_timer - start_req_handling_timer) * 1000),)
+        
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -187,6 +257,10 @@ def parse_args(argv=None):
                         help='Run with Flask and support a minimal REST-ful API?')
     parser.add_argument('--flask_port', default=11000, type=int,
                         help='Port to run web-service on')
+    parser.add_argument('--flask_output_webserver', default="http://10.1.10.110:8080/openoutputs/", type=str,
+                        help='Port to run web-service on')
+    parser.add_argument('--flask_debug_mode', default=False, type=bool,
+                        help='Accept HTTP requests and run in debug mode where its slower but with more info. printed out')
 
     parser.set_defaults(no_bar=False, display=False, resume=False, output_coco_json=False, output_web_json=False, shuffle=False,
                         benchmark=False, no_sort=False, no_hash=False, mask_proto_debug=False, crop=True, detect=False)
@@ -251,7 +325,8 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
         
     if num_dets_to_consider == 0:
         if args.contours_json:
-            print(" * About to set status to finished")
+            if args.flask_debug_mode:
+                print(" * About to set status to finished")
             if args.run_with_flask:
                 contours_json_status_lock.acquire()
                 contours_json["status"] = "finished"
@@ -384,7 +459,8 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
             contours_json["results"]["num_contour_points"].append(len(mask_contours[j]))
             contours_json["results"]["contours"].append(mask_contours[j])
 
-        print(" * About to set status to finished")
+        if args.flask_debug_mode:
+            print(" * About to set status to finished")
         if args.run_with_flask:
             contours_json_status_lock.acquire()
             contours_json["status"] = "finished"
@@ -718,13 +794,75 @@ def badhash(x):
     x =  ((x >> 16) ^ x) & 0xFFFFFFFF
     return x
 
-def evalimage(net:Yolact, path:str, save_path:str=None):
-    frame = torch.from_numpy(cv2.imread(path)).cuda().float()
-    batch = FastBaseTransform()(frame.unsqueeze(0))
-    preds = net(batch)
+def get_local_filepath(imgpath:str):
 
+    local_filepath = None
+    pulled_file = False
+
+    if not is_url(imgpath):
+        print("%s is not a url but a local file" % (imgpath))
+        local_filepath = imgpath
+    else:
+        split_request_json = imgpath.rsplit("/", 1)
+        #print(split_request_json)
+        local_filepath = "/run/p1inputs/" + split_request_json[1]
+        print(" * About to pull from %s into %s" % (imgpath, local_filepath,))
+        response, retval = get_url_using_requests_lib(imgpath, stream=True)
+        if response is not None:
+            # print(" * http response status code: %d" % (response.status_code,))
+            if (response.status_code == 200):
+                try:
+                    with open(local_filepath, 'wb') as fd:
+                        fd.write(response.content)
+                except IOError:
+                    print("Could not write to file: " + str(local_filepath))
+                else:
+                    if args.flask_debug_mode:
+                        print(" * Pulled from URL %s and wrote content to file %s of length %s" % (imgpath, local_filepath, response.headers.get('content-length')))
+                    pulled_file = True
+            else:
+                print(" * Did not write content from %s to file %s as response status code is not 200/HTTP OK" % (imgpath, local_filepath,))
+        else:
+            print(" * Did not write content from %s to file %s as response is None" % (imgpath, local_filepath,))
+
+    return local_filepath, pulled_file
+
+def evalimage(net:Yolact, imgpath:str, save_path:str=None):    
+
+    start_url_handling_timer = default_timeit_timer()
+    path, url_valid_flag = get_local_filepath(imgpath)
+    end_url_handling_timer = default_timeit_timer()
+                
+    local_img_cannot_be_read = False
+    
+    cv2_img_obj = None
+    if url_valid_flag:
+        # print(" * Path: %s" % (path,))
+
+        start_file_read_timer = default_timeit_timer()
+        cv2_img_obj = cv2.imread(path)
+        #print(" * cv2_img_obj: %s" % (str(cv2_img_obj),))
+        end_file_read_timer = default_timeit_timer()
+        
+        if cv2_img_obj is not None:    
+            start_preds_timer = default_timeit_timer()
+            try:
+                frame = torch.from_numpy(cv2_img_obj).cuda().float()
+            except TypeError:
+                print(" * TypeError reading %s" % (path,))
+                local_img_cannot_be_read = True
+            else:
+                batch = FastBaseTransform()(frame.unsqueeze(0))
+                preds = net(batch)
+            end_preds_timer = default_timeit_timer()
+        else:
+            print(" * OpenCV could not read input image file at: %s. Bad image file or invalid imgpath: %s?" % (path, imgpath,))
+            local_img_cannot_be_read = True
+    else:
+        print(" * URL %s invalid" % (imgpath,))
+        
     if args.contours_json:
-        contours_json["input"] = path
+        contours_json["input"] = imgpath
         contours_json["results"] = {}
         contours_json["results"]["left"] = []
         contours_json["results"]["top"] = []
@@ -734,29 +872,64 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
         contours_json["results"]["labels"] = []
         contours_json["results"]["num_contour_points"] = []
         contours_json["results"]["contours"] = []
-        #contours_json["status"] = "running"
+
+        if url_valid_flag == True and local_img_cannot_be_read == False:
+            contours_json["output_urlpath"] = args.flask_output_webserver + save_path.rsplit("/", 1)[1]
+            #contours_json["status"] = "running"
+
+            start_prep_display_timer = default_timeit_timer()
+            img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
+            end_prep_display_timer = default_timeit_timer()
+                        
+            contours_json["error_description"] = ""
             
-    img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
+            #print(contours_json)
+            if args.contours_json_file:
+                with open(args.contours_json_file, "w") as ofp:
+                    #json.dump(contours_json, ofp, sort_keys=True, indent=4, separators=(',', ': '))
+                    json.dump(contours_json, ofp)
+            else:
+                if args.flask_debug_mode:
+                    print(" * Contour JSON: ", json.dumps(contours_json))
+                
+            if save_path is None:
+                img_numpy = img_numpy[:, :, (2, 1, 0)]
 
-    #print(contours_json)
-    if args.contours_json_file:
-        with open(args.contours_json_file, "w") as ofp:
-            #json.dump(contours_json, ofp, sort_keys=True, indent=4, separators=(',', ': '))
-            json.dump(contours_json, ofp)
-    else:
-        print(" * Contour JSON: ", json.dumps(contours_json))
-              
-    if save_path is None:
-        img_numpy = img_numpy[:, :, (2, 1, 0)]
+            if save_path is None:
+                plt.imshow(img_numpy)
+                plt.title(path)
+                plt.show()
+            else:
+                start_outputimg_timer = default_timeit_timer()
+                if args.flask_debug_mode:
+                    cv2.imwrite(save_path, img_numpy)
+                end_outputimg_timer = default_timeit_timer()
 
-    if save_path is None:
-        plt.imshow(img_numpy)
-        plt.title(path)
-        plt.show()
-    else:
-        cv2.imwrite(save_path, img_numpy)
-        #pass
-    
+                url_handling_time_ms = ((end_url_handling_timer - start_url_handling_timer) * 1000)
+                file_read_time_ms = ((end_file_read_timer - start_file_read_timer) * 1000.0)
+                preds_time_ms = ((end_preds_timer - start_preds_timer) * 1000.0)
+                prep_display_time_ms = ((end_prep_display_timer - start_prep_display_timer) * 1000.0)
+                output_img_writeout_time_ms = ((end_outputimg_timer - start_outputimg_timer) * 1000.0)
+                sum_time_ms = url_handling_time_ms + file_read_time_ms + preds_time_ms + prep_display_time_ms + output_img_writeout_time_ms
+                print(" * URL-handling-time: %0.4f ms, File-read-time: %0.4f ms, Preds-time: %0.4f ms, Prep-display-timer: %0.4f ms, Output-writeout-timer: %0.4f ms, sum: %0.4f ms, FPS: %0.4f" % \
+                      ( url_handling_time_ms, file_read_time_ms, preds_time_ms, prep_display_time_ms, output_img_writeout_time_ms, sum_time_ms, 1000.0/sum_time_ms))
+            
+        else:
+            num_dets_to_consider = 0
+            contours_json["results"]["num_labels_detected"] = num_dets_to_consider
+
+            if args.flask_debug_mode:
+                print(" * About to set status to finished")
+            if args.run_with_flask:
+                contours_json_status_lock.acquire()
+                contours_json["status"] = "finished"
+                contours_json_status_lock.release()
+                print(" * Set status to finished")
+                if local_img_cannot_be_read:
+                    contours_json["error_description"] = "Invalid input file %s" % (imgpath,)
+                elif not url_valid_flag:
+                    contours_json["error_description"] = "Invalid input URL %s" % (imgpath,)
+                    
 def evalimages(net:Yolact, input_folder:str, output_folder:str):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
