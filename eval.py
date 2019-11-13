@@ -33,7 +33,9 @@ import timeit
 from flask import Flask
 from flask import request, jsonify
 from queue import Queue
-from threading import Thread, Lock
+#from threading import Thread, Lock
+from multiprocessing import Process, Lock, Manager
+from multiprocessing import Queue as mpQueue
 
 # To pull files in URLs
 from urllib.parse import urlparse
@@ -45,8 +47,6 @@ from timeit import default_timer as default_timeit_timer
 app = Flask(__name__)
 request_queue = None
 worker_thread = None
-contours_json_status_lock = None
-contours_json = {}
 start_queue_timer = None
 end_queue_timer = None
 
@@ -61,7 +61,14 @@ def handle_post():
     print(' * Queuing:', content)
     start_queue_timer = default_timeit_timer()
     request_queue.put(content)
+
+    print(' * Config item: ', app.config['contours_json'])
+
     content["id"] = 0
+
+    contours_json = app.config['contours_json']
+    contours_json_status_lock = app.config['contours_json_status_lock']
+
     contours_json_status_lock.acquire()
     contours_json["status"] = "running"
     contours_json_status_lock.release()
@@ -72,9 +79,15 @@ def handle_post():
 @app.route("/api/v0/classify/<classify_id>/", methods = ['GET'])
 def handle_get(classify_id):
     # print(classify_id)
+    print('* Config item: ', app.config['contours_json'])
+    contours_json = app.config['contours_json']
+    results_json = app.config['results_json']
+    contours_json_status_lock = app.config['contours_json_status_lock']
+
     if args.flask_debug_mode:
         print(" * Contours JSON in GET", json.dumps(contours_json))
     contours_json_status = None
+
     if contours_json:
         contours_json_status_lock.acquire()
         contours_json_status = contours_json["status"]
@@ -85,7 +98,8 @@ def handle_get(classify_id):
     elif (contours_json and contours_json_status == "running"):
         response_json = {"status": "running"}
     else:
-        response_json = contours_json
+        response_json = contours_json.copy()
+        response_json["results"] = results_json.copy()
     return jsonify(response_json)
 
 def is_url(url):
@@ -126,20 +140,18 @@ def get_url_using_requests_lib(url_name, **kwargs):
                 
         return response, retval_expect
     
-def flask_evaluate(thread_id, net:Yolact, dataset, input_queue):
+def flask_evaluate(process_id, input_queue, inference_queue):
     """This is the worker thread function.
     It processes items in the queue one after
     another.
     """
     global start_queue_timer, end_queue_timer
     
-    print(" * Inside worker thread for flask_evaluate")
-
-    net.detect.use_fast_nms = args.fast_nms
-    cfg.mask_proto_debug = args.mask_proto_debug
-
+    print(" * Inside worker process for flask_evaluate")
+    # print(" * input_queue: ", input_queue)
+    
     while True:
-        print(' * %s: Looking for the next item in queue' % thread_id)
+        print(' * %s: Looking for the next item in request_queue' % process_id)
         request_json = input_queue.get()
         end_queue_timer = default_timeit_timer()
         if start_queue_timer and end_queue_timer:
@@ -159,13 +171,26 @@ def flask_evaluate(thread_id, net:Yolact, dataset, input_queue):
             out = request_json["output_dir"] + request_json["input"].rsplit("/", 1)[1]
             # print(" * output_filepath: %s" % (out,))
             
-        with torch.no_grad():
-            evalimage(net, request_json["input"], out)
+
+        inference_queue.put((request_json["input"], out,))
+        
+        #with torch.no_grad():
+        #    evalimage(net, request_json["input"], out)
             
-        input_queue.task_done()
+        #input_queue.task_done()
 
         end_req_handling_timer = default_timeit_timer()
         print(" * Request handled in %0.4f ms" % ((end_req_handling_timer - start_req_handling_timer) * 1000),)
+
+def flask_server_run(process_id, flask_port, contours_json, results_json, status_lock):
+    print(" * Inside worker process for flask_server_run")
+
+    app.config['contours_json'] = contours_json
+    app.config['results_json'] = results_json
+    app.config['contours_json_status_lock'] = status_lock
+    
+    print(' * Passed item: ', app.config['contours_json'])
+    app.run(host='0.0.0.0', port=flask_port)
         
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -286,7 +311,7 @@ def wrapper(func, *args, **kwargs):
         return func(*args, **kwargs)
     return wrapped
 
-def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45):
+def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45, contours_json_dict=None, status_lock=None):
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
     """
@@ -320,17 +345,19 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
     #for i in range(num_dets_to_consider):
     #    print(i, masks[i].nonzero().size())
     #print(masks[6].nonzero().size())
+    print(" * args.contours_json: ", args.contours_json)
     if args.contours_json:
-        contours_json["results"]["num_labels_detected"] = num_dets_to_consider
+        contours_json_dict["results"]["num_labels_detected"] = num_dets_to_consider
+        print(" * contours_json['results']", contours_json_dict["results"], " | num_dets_to_consider: ", num_dets_to_consider)
         
     if num_dets_to_consider == 0:
         if args.contours_json:
             if args.flask_debug_mode:
                 print(" * About to set status to finished")
             if args.run_with_flask:
-                contours_json_status_lock.acquire()
-                contours_json["status"] = "finished"
-                contours_json_status_lock.release()
+                status_lock.acquire()
+                contours_json_dict["status"] = "finished"
+                status_lock.release()
                 print(" * Set status to finished")
 
         # No detections found so just output the original image
@@ -391,12 +418,12 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
             score = scores[j]
 
             if args.contours_json:
-                contours_json["results"]["left"].append(int(x1))
-                contours_json["results"]["top"].append(int(y1))
-                contours_json["results"]["right"].append(int(x2))
-                contours_json["results"]["bottom"].append(int(y2))
-                contours_json["results"]["confidence"].append(float(score))
-                contours_json["results"]["labels"].append(cfg.dataset.class_names[classes[j]])
+                contours_json_dict["results"]["left"].append(int(x1))
+                contours_json_dict["results"]["top"].append(int(y1))
+                contours_json_dict["results"]["right"].append(int(x2))
+                contours_json_dict["results"]["bottom"].append(int(y2))
+                contours_json_dict["results"]["confidence"].append(float(score))
+                contours_json_dict["results"]["labels"].append(cfg.dataset.class_names[classes[j]])
                 
             if args.display_bboxes:
                 #if (j == 6):
@@ -456,14 +483,14 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
             #if j == 6:
             #    print(mask_contours[j])
 
-            contours_json["results"]["num_contour_points"].append(len(mask_contours[j]))
-            contours_json["results"]["contours"].append(mask_contours[j])
+            contours_json_dict["results"]["num_contour_points"].append(len(mask_contours[j]))
+            contours_json_dict["results"]["contours"].append(mask_contours[j])
 
         if args.flask_debug_mode:
             print(" * About to set status to finished")
         if args.run_with_flask:
             contours_json_status_lock.acquire()
-            contours_json["status"] = "finished"
+            contours_json_dict["status"] = "finished"
             contours_json_status_lock.release()
             print(" * Set status to finished")
                 
@@ -827,7 +854,7 @@ def get_local_filepath(imgpath:str):
 
     return local_filepath, pulled_file
 
-def evalimage(net:Yolact, imgpath:str, save_path:str=None):    
+def evalimage(net:Yolact, imgpath:str, save_path:str=None, contours_json=None, results_json=None, request_status_lock=None):    
 
     start_url_handling_timer = default_timeit_timer()
     path, url_valid_flag = get_local_filepath(imgpath)
@@ -863,22 +890,27 @@ def evalimage(net:Yolact, imgpath:str, save_path:str=None):
         
     if args.contours_json:
         contours_json["input"] = imgpath
+        # HACK!! As per https://stackoverflow.com/questions/37510076/unable-to-update-nested-dictionary-value-in-multiprocessings-manager-dict
         contours_json["results"] = {}
-        contours_json["results"]["left"] = []
-        contours_json["results"]["top"] = []
-        contours_json["results"]["right"] = []
-        contours_json["results"]["bottom"] = []
-        contours_json["results"]["confidence"] = []
-        contours_json["results"]["labels"] = []
-        contours_json["results"]["num_contour_points"] = []
-        contours_json["results"]["contours"] = []
-
+        results_json["left"] = []
+        results_json["top"] = []
+        results_json["right"] = []
+        results_json["bottom"] = []
+        results_json["confidence"] = []
+        results_json["labels"] = []
+        results_json["num_contour_points"] = []
+        results_json["contours"] = []
+        results_json["num_labels_detected"] = 0
+        
+        print(" * results_json_results: ", contours_json["results"], results_json)
+        
         if url_valid_flag == True and local_img_cannot_be_read == False:
             contours_json["output_urlpath"] = args.flask_output_webserver + save_path.rsplit("/", 1)[1]
+            
             #contours_json["status"] = "running"
 
             start_prep_display_timer = default_timeit_timer()
-            img_numpy = prep_display(preds, frame, None, None, undo_transform=False)
+            img_numpy = prep_display(preds, frame, None, None, undo_transform=False, contours_json_dict=contours_json, status_lock=request_status_lock)
             end_prep_display_timer = default_timeit_timer()
                         
             contours_json["error_description"] = ""
@@ -921,9 +953,9 @@ def evalimage(net:Yolact, imgpath:str, save_path:str=None):
             if args.flask_debug_mode:
                 print(" * About to set status to finished")
             if args.run_with_flask:
-                contours_json_status_lock.acquire()
+                request_status_lock.acquire()
                 contours_json["status"] = "finished"
-                contours_json_status_lock.release()
+                request_status_lock.release()
                 print(" * Set status to finished")
                 if local_img_cannot_be_read:
                     contours_json["error_description"] = "Invalid input file %s" % (imgpath,)
@@ -948,7 +980,6 @@ def evalimages(net:Yolact, input_folder:str, output_folder:str):
     print('Done.')
 
 from multiprocessing.pool import ThreadPool
-from queue import Queue
 
 class CustomDataParallel(torch.nn.DataParallel):
     """ A Custom Data Parallel class that properly gathers lists of dictionaries. """
@@ -1385,14 +1416,35 @@ if __name__ == '__main__':
             net = net.cuda()
 
         if args.run_with_flask:
-            request_queue = Queue()
+
+            manager = Manager()
+            contours_json = manager.dict()
+            results_json = manager.dict()
+            contours_json_status_lock = manager.Lock()
+            
+            request_queue = mpQueue()
+            inference_queue = mpQueue()
             contours_json_status_lock = Lock()
-            worker_thread = Thread(target=flask_evaluate, args=(0, net, dataset, request_queue,))
-            worker_thread.setDaemon(True)
-            worker_thread.start()
-            app.run(host='0.0.0.0', port=args.flask_port)
+
+            worker_process1 = Process(target=flask_evaluate, args=(1, request_queue, inference_queue))
+            worker_process2 = Process(target=flask_server_run, args=(2, args.flask_port, contours_json, results_json, contours_json_status_lock))
+            #worker_thread = Thread(target=flask_evaluate, args=(0, net, dataset, request_queue,))
+            #worker_thread.setDaemon(True)
+            worker_process1.start()
+            worker_process2.start()
+
+            net.detect.use_fast_nms = args.fast_nms
+            cfg.mask_proto_debug = args.mask_proto_debug
+            while True:
+                print(' * 0: Looking for the next item in inference_queue')
+                (input_path, output_path,) = inference_queue.get()
+                with torch.no_grad():
+                    evalimage(net, input_path, output_path, contours_json, results_json, contours_json_status_lock)
+            
             #print '*** Main thread waiting'
-            request_queue.join()
+            #request_queue.join()
+            worker_process1.join()
+            worker_process2.join()
             #print '*** Done'
         else:
             evaluate(net, dataset)
