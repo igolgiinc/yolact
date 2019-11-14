@@ -201,7 +201,7 @@ def flask_server_run(process_id, flask_port, contours_json, results_json, status
     app.run(host='0.0.0.0', port=flask_port)
 
         
-def pull_url_to_file(process_id, pull_queue, inference_queue, contours_json, results_json, status_lock):
+def pull_url_to_file(process_id, pull_queue, img_read_queue, contours_json, results_json, status_lock):
     """This is the worker thread function.
     It processes items in the queue one after
     another.
@@ -224,9 +224,9 @@ def pull_url_to_file(process_id, pull_queue, inference_queue, contours_json, res
             end_url_handling_timer = default_timeit_timer()
 
             if url_valid_flag:
-                print(" * Put item in inference queue")
-                inference_queue.put((local_img_path, output_path, input_path,))
-                print(" * inference queue after put | size=", inference_queue.qsize())
+                print(" * Put item in img_read queue")
+                img_read_queue.put((local_img_path, output_path, input_path,))
+                print(" * img_read queue after put | size=", img_read_queue.qsize())
             else:
                 num_dets_to_consider = 0
                 results_json["num_labels_detected"] = num_dets_to_consider
@@ -239,7 +239,55 @@ def pull_url_to_file(process_id, pull_queue, inference_queue, contours_json, res
                     status_lock.release()
                     print(" * Set status to finished")
                     contours_json["error_description"] = "Invalid input URL %s" % (input_path,)
-                    
+
+def read_imgfile(process_id, img_read_queue, inference_queue, contours_json, results_json, status_lock):
+    """This is the worker thread function.
+    It processes items in the queue one after
+    another.
+    """
+    print(" * Inside worker process for read_imgfile")
+
+    while True:
+        
+        if args.flask_debug_mode:
+            print(' * 0: Looking for the next item in img_read_queue')
+        try:
+            (local_path, output_path, orig_path,) = img_read_queue.get(timeout=QUEUE_GET_TIMEOUT)
+        except Queue_Empty as error:
+            if args.flask_debug_mode:
+                print(" * img_read queue: timeout occurred | size=", img_read_queue.qsize())
+            continue
+        else:
+            
+            cv2_img_obj = None
+            # print(" * Path: %s" % (path,))
+            start_file_read_timer = default_timeit_timer()
+            cv2_img_obj = cv2.imread(local_path)
+            #print(" * cv2_img_obj: %s" % (str(cv2_img_obj),))
+            end_file_read_timer = default_timeit_timer()
+            
+            if cv2_img_obj is None:
+
+                print(" * OpenCV could not read input image file at: %s. Bad image file?" % (path,))
+
+                num_dets_to_consider = 0
+                results_json["num_labels_detected"] = num_dets_to_consider
+
+                if args.flask_debug_mode:
+                    print(" * About to set status to finished")
+                if args.run_with_flask:
+                    status_lock.acquire()
+                    contours_json["status"] = "finished"
+                    status_lock.release()
+                    print(" * Set status to finished")
+                    contours_json["error_description"] = "Invalid input file %s" % (original_path,)
+
+            else:
+
+                print(" * Put item in inference queue")
+                inference_queue.put((local_path, output_path, orig_path, cv2_img_obj,))
+                print(" * inference queue after put | size=", inference_queue.qsize())
+
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -921,6 +969,73 @@ def get_local_filepath(imgpath:str):
 
     return local_filepath, pulled_file
 
+def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=None, results_json=None, request_status_lock=None, original_path=None):    
+        
+    start_preds_timer = default_timeit_timer()
+    try:
+        frame = torch.from_numpy(cv2_img_obj).cuda().float()
+    except TypeError:
+        print(" * TypeError reading %s" % (path,))
+        local_img_cannot_be_read = True
+    else:
+        batch = FastBaseTransform()(frame.unsqueeze(0))
+        preds = net(batch)
+    end_preds_timer = default_timeit_timer()
+        
+    if args.contours_json:
+        contours_json["input"] = original_path
+        # HACK!! As per https://stackoverflow.com/questions/37510076/unable-to-update-nested-dictionary-value-in-multiprocessings-manager-dict
+        #results_json["num_contour_points"] = []
+        #results_json["contours"] = []
+        results_json["num_labels_detected"] = 0
+        
+        print(" * results_json_results (initial): ", results_json)
+        
+        contours_json["output_urlpath"] = args.flask_output_webserver + save_path.rsplit("/", 1)[1]
+
+        #contours_json["status"] = "running"
+
+        start_prep_display_timer = default_timeit_timer()
+        img_numpy = prep_display(preds, frame, None, None, undo_transform=False, contours_json_dict=contours_json, \
+                                 results_json_dict=results_json, status_lock=request_status_lock)
+        end_prep_display_timer = default_timeit_timer()
+
+        contours_json["error_description"] = ""
+
+        #print(contours_json)
+        if args.contours_json_file:
+            with open(args.contours_json_file, "w") as ofp:
+                #json.dump(contours_json, ofp, sort_keys=True, indent=4, separators=(',', ': '))
+                json.dump(contours_json, ofp)
+        else:
+            if args.flask_debug_mode:
+                print(" * Contour JSON: ", json.dumps(contours_json))
+
+        if save_path is None:
+            img_numpy = img_numpy[:, :, (2, 1, 0)]
+
+        if save_path is None:
+            plt.imshow(img_numpy)
+            plt.title(path)
+            plt.show()
+        else:
+            start_outputimg_timer = default_timeit_timer()
+            if args.flask_debug_mode:
+                cv2.imwrite(save_path, img_numpy)
+            end_outputimg_timer = default_timeit_timer()
+
+            '''
+            url_handling_time_ms = ((end_url_handling_timer - start_url_handling_timer) * 1000)
+            file_read_time_ms = ((end_file_read_timer - start_file_read_timer) * 1000.0)
+            preds_time_ms = ((end_preds_timer - start_preds_timer) * 1000.0)
+            prep_display_time_ms = ((end_prep_display_timer - start_prep_display_timer) * 1000.0)
+            output_img_writeout_time_ms = ((end_outputimg_timer - start_outputimg_timer) * 1000.0)
+            sum_time_ms = url_handling_time_ms + file_read_time_ms + preds_time_ms + prep_display_time_ms + output_img_writeout_time_ms
+            print(" * URL-handling-time: %0.4f ms, File-read-time: %0.4f ms, Preds-time: %0.4f ms, Prep-display-timer: %0.4f ms, Output-writeout-timer: %0.4f ms, sum: %0.4f ms, FPS: %0.4f" % \
+                  ( url_handling_time_ms, file_read_time_ms, preds_time_ms, prep_display_time_ms, output_img_writeout_time_ms, sum_time_ms, 1000.0/sum_time_ms))
+            '''
+                
+            
 def evalimage(net:Yolact, path:str, save_path:str=None, contours_json=None, results_json=None, request_status_lock=None, original_path=None):    
                 
     local_img_cannot_be_read = False
@@ -1013,7 +1128,7 @@ def evalimage(net:Yolact, path:str, save_path:str=None, contours_json=None, resu
                 request_status_lock.release()
                 print(" * Set status to finished")
                 contours_json["error_description"] = "Invalid input file %s" % (original_path,)
-                    
+
 def evalimages(net:Yolact, input_folder:str, output_folder:str):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
@@ -1479,15 +1594,18 @@ if __name__ == '__main__':
             
             request_queue = mpQueue()
             pull_queue = mpQueue()
+            img_read_queue = mpQueue()
             inference_queue = mpQueue()
             contours_json_status_lock = Lock()
 
             worker_process1 = Process(target=flask_evaluate, args=(1, request_queue, pull_queue))
             worker_process2 = Process(target=flask_server_run, args=(2, args.flask_port, contours_json, results_json, contours_json_status_lock))
-            worker_process3 = Process(target=pull_url_to_file, args=(3, pull_queue, inference_queue, contours_json, results_json, contours_json_status_lock))
+            worker_process3 = Process(target=pull_url_to_file, args=(3, pull_queue, img_read_queue, contours_json, results_json, contours_json_status_lock))
+            worker_process4 = Process(target=read_imgfile, args=(4, img_read_queue, inference_queue, contours_json, results_json, contours_json_status_lock))
             worker_process1.start()
             worker_process2.start()
             worker_process3.start()
+            worker_process4.start()
 
             net.detect.use_fast_nms = args.fast_nms
             cfg.mask_proto_debug = args.mask_proto_debug
@@ -1495,7 +1613,7 @@ if __name__ == '__main__':
                 if args.flask_debug_mode:
                     print(' * 0: Looking for the next item in inference_queue')
                 try:
-                    (local_path, output_path, orig_path,) = inference_queue.get(timeout=QUEUE_GET_TIMEOUT)
+                    (local_path, output_path, orig_path, cv2_img_obj,) = inference_queue.get(timeout=QUEUE_GET_TIMEOUT)
                 except Queue_Empty as error:
                     if args.flask_debug_mode:
                         print(" * inference queue: timeout occurred | size=", inference_queue.qsize())
@@ -1503,14 +1621,16 @@ if __name__ == '__main__':
                 else:
                     # print(" * Queue not empty")
                     with torch.no_grad():
-                        evalimage(net, local_path, output_path, contours_json, results_json, contours_json_status_lock, orig_path)
+                        eval_cv2_image(net, cv2_img_obj, output_path, contours_json, results_json, contours_json_status_lock, orig_path)
             
             print('*** Main process waiting')
             #request_queue.join()
             worker_process1.join()
             worker_process2.join()
             worker_process3.join()
+            worker_process4.join()
             print('*** Done')
+            
         else:
             evaluate(net, dataset)
 
