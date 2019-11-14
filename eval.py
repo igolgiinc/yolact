@@ -51,8 +51,6 @@ import sys
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C! Quitting!')
     sys.exit(0)
-    
-signal.signal(signal.SIGINT, signal_handler)
 
 app = Flask(__name__)
 request_queue = None
@@ -321,7 +319,7 @@ def wrapper(func, *args, **kwargs):
         return func(*args, **kwargs)
     return wrapped
 
-def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45, contours_json_dict=None, status_lock=None):
+def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, mask_alpha=0.45, contours_json_dict=None, results_json_dict=None, status_lock=None):
     """
     Note: If undo_transform=False then im_h and im_w are allowed to be None.
     """
@@ -357,8 +355,8 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
     #print(masks[6].nonzero().size())
     print(" * args.contours_json: ", args.contours_json)
     if args.contours_json:
-        contours_json_dict["results"]["num_labels_detected"] = num_dets_to_consider
-        print(" * contours_json['results']", contours_json_dict["results"], " | num_dets_to_consider: ", num_dets_to_consider)
+        results_json_dict["num_labels_detected"] = num_dets_to_consider
+        print(" * results_json: ", results_json_dict)
         
     if num_dets_to_consider == 0:
         if args.contours_json:
@@ -422,18 +420,24 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
     img_numpy = (img_gpu * 255).byte().cpu().numpy()
     
     if args.display_text or args.display_bboxes or args.contours_json:
+        left = []
+        top = []
+        right = []
+        bottom = []
+        confidence = []
+        labels = []
         for j in reversed(range(num_dets_to_consider)):
             x1, y1, x2, y2 = boxes[j, :]
             color = get_color(j)
             score = scores[j]
 
             if args.contours_json:
-                contours_json_dict["results"]["left"].append(int(x1))
-                contours_json_dict["results"]["top"].append(int(y1))
-                contours_json_dict["results"]["right"].append(int(x2))
-                contours_json_dict["results"]["bottom"].append(int(y2))
-                contours_json_dict["results"]["confidence"].append(float(score))
-                contours_json_dict["results"]["labels"].append(cfg.dataset.class_names[classes[j]])
+                left.append(int(x1))
+                top.append(int(y1))
+                right.append(int(x2))
+                bottom.append(int(y2))
+                confidence.append(float(score))
+                labels.append(cfg.dataset.class_names[classes[j]])
                 
             if args.display_bboxes:
                 #if (j == 6):
@@ -456,8 +460,17 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
                 cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
 
+        results_json["left"] = left
+        results_json["top"] = top
+        results_json["right"] = right
+        results_json["bottom"] = bottom
+        results_json["confidence"] = confidence
+        results_json["labels"] = labels
+        
     # Code to get contours of the pixel masks
     if args.contours_json:
+        results_mask_contours = []
+        results_num_contour_points = []
         mask_contours = []
         
         for j in range(num_dets_to_consider):
@@ -493,9 +506,12 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
             #if j == 6:
             #    print(mask_contours[j])
 
-            contours_json_dict["results"]["num_contour_points"].append(len(mask_contours[j]))
-            contours_json_dict["results"]["contours"].append(mask_contours[j])
+            results_num_contour_points.append(len(mask_contours[j]))
+            results_mask_contours.append(mask_contours[j])
 
+        results_json["num_contour_points"] = results_num_contour_points
+        results_json["contours"] = results_mask_contours
+        
         if args.flask_debug_mode:
             print(" * About to set status to finished")
         if args.run_with_flask:
@@ -901,18 +917,11 @@ def evalimage(net:Yolact, imgpath:str, save_path:str=None, contours_json=None, r
     if args.contours_json:
         contours_json["input"] = imgpath
         # HACK!! As per https://stackoverflow.com/questions/37510076/unable-to-update-nested-dictionary-value-in-multiprocessings-manager-dict
-        contours_json["results"] = {}
-        results_json["left"] = []
-        results_json["top"] = []
-        results_json["right"] = []
-        results_json["bottom"] = []
-        results_json["confidence"] = []
-        results_json["labels"] = []
-        results_json["num_contour_points"] = []
-        results_json["contours"] = []
+        #results_json["num_contour_points"] = []
+        #results_json["contours"] = []
         results_json["num_labels_detected"] = 0
         
-        print(" * results_json_results: ", contours_json["results"], results_json)
+        print(" * results_json_results (initial): ", results_json)
         
         if url_valid_flag == True and local_img_cannot_be_read == False:
             contours_json["output_urlpath"] = args.flask_output_webserver + save_path.rsplit("/", 1)[1]
@@ -920,7 +929,8 @@ def evalimage(net:Yolact, imgpath:str, save_path:str=None, contours_json=None, r
             #contours_json["status"] = "running"
 
             start_prep_display_timer = default_timeit_timer()
-            img_numpy = prep_display(preds, frame, None, None, undo_transform=False, contours_json_dict=contours_json, status_lock=request_status_lock)
+            img_numpy = prep_display(preds, frame, None, None, undo_transform=False, contours_json_dict=contours_json, \
+                                     results_json_dict=results_json, status_lock=request_status_lock)
             end_prep_display_timer = default_timeit_timer()
                         
             contours_json["error_description"] = ""
@@ -958,7 +968,7 @@ def evalimage(net:Yolact, imgpath:str, save_path:str=None, contours_json=None, r
             
         else:
             num_dets_to_consider = 0
-            contours_json["results"]["num_labels_detected"] = num_dets_to_consider
+            results_json["num_labels_detected"] = num_dets_to_consider
 
             if args.flask_debug_mode:
                 print(" * About to set status to finished")
@@ -1362,6 +1372,9 @@ def print_maps(all_maps):
 
 
 if __name__ == '__main__':
+    
+    signal.signal(signal.SIGINT, signal_handler)
+
     parse_args()
 
     if args.config is not None:
