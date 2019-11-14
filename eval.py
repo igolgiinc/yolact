@@ -289,6 +289,30 @@ def read_imgfile(process_id, img_read_queue, inference_queue, contours_json, res
                 print(" * inference queue after put | size=", inference_queue.qsize())
 
 
+def write_imgfile(process_id, img_write_queue, contours_json, results_json, status_lock):
+    """This is the worker thread function.
+    It processes items in the queue one after
+    another.
+    """
+    print(" * Inside worker process for write_imgfile")
+
+    while True:
+        
+        if args.flask_debug_mode:
+            print(' * 0: Looking for the next item in img_write_queue')
+        try:
+            (output_path, img_numpy_obj,) = img_write_queue.get(timeout=QUEUE_GET_TIMEOUT)
+        except Queue_Empty as error:
+            if args.flask_debug_mode:
+                print(" * img_write queue: timeout occurred | size=", img_write_queue.qsize())
+            continue
+        else:
+
+            start_outputimg_timer = default_timeit_timer()
+            cv2.imwrite(output_path, img_numpy_obj)
+            end_outputimg_timer = default_timeit_timer()
+            
+
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -969,8 +993,8 @@ def get_local_filepath(imgpath:str):
 
     return local_filepath, pulled_file
 
-def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=None, results_json=None, request_status_lock=None, original_path=None):    
-        
+def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=None, results_json=None, request_status_lock=None, original_path=None, img_write_queue=None):
+    
     start_preds_timer = default_timeit_timer()
     try:
         frame = torch.from_numpy(cv2_img_obj).cuda().float()
@@ -985,8 +1009,6 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=No
     if args.contours_json:
         contours_json["input"] = original_path
         # HACK!! As per https://stackoverflow.com/questions/37510076/unable-to-update-nested-dictionary-value-in-multiprocessings-manager-dict
-        #results_json["num_contour_points"] = []
-        #results_json["contours"] = []
         results_json["num_labels_detected"] = 0
         
         print(" * results_json_results (initial): ", results_json)
@@ -1014,16 +1036,12 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=No
         if save_path is None:
             img_numpy = img_numpy[:, :, (2, 1, 0)]
 
-        if save_path is None:
-            plt.imshow(img_numpy)
-            plt.title(path)
-            plt.show()
-        else:
-            start_outputimg_timer = default_timeit_timer()
-            if args.flask_debug_mode:
-                cv2.imwrite(save_path, img_numpy)
-            end_outputimg_timer = default_timeit_timer()
+        if save_path is not None:
 
+            print(" * Put item in img_write queue")
+            img_write_queue.put((save_path, img_numpy,))
+            print(" * img_write queue after put | size=", img_write_queue.qsize())
+            
             '''
             url_handling_time_ms = ((end_url_handling_timer - start_url_handling_timer) * 1000)
             file_read_time_ms = ((end_file_read_timer - start_file_read_timer) * 1000.0)
@@ -1596,16 +1614,20 @@ if __name__ == '__main__':
             pull_queue = mpQueue()
             img_read_queue = mpQueue()
             inference_queue = mpQueue()
+            img_write_queue = mpQueue()
+
             contours_json_status_lock = Lock()
 
             worker_process1 = Process(target=flask_evaluate, args=(1, request_queue, pull_queue))
             worker_process2 = Process(target=flask_server_run, args=(2, args.flask_port, contours_json, results_json, contours_json_status_lock))
             worker_process3 = Process(target=pull_url_to_file, args=(3, pull_queue, img_read_queue, contours_json, results_json, contours_json_status_lock))
             worker_process4 = Process(target=read_imgfile, args=(4, img_read_queue, inference_queue, contours_json, results_json, contours_json_status_lock))
+            worker_process5 = Process(target=write_imgfile, args=(4, img_write_queue, contours_json, results_json, contours_json_status_lock))
             worker_process1.start()
             worker_process2.start()
             worker_process3.start()
             worker_process4.start()
+            worker_process5.start()
 
             net.detect.use_fast_nms = args.fast_nms
             cfg.mask_proto_debug = args.mask_proto_debug
@@ -1621,7 +1643,7 @@ if __name__ == '__main__':
                 else:
                     # print(" * Queue not empty")
                     with torch.no_grad():
-                        eval_cv2_image(net, cv2_img_obj, output_path, contours_json, results_json, contours_json_status_lock, orig_path)
+                        eval_cv2_image(net, cv2_img_obj, output_path, contours_json, results_json, contours_json_status_lock, orig_path, img_write_queue)
             
             print('*** Main process waiting')
             #request_queue.join()
@@ -1629,6 +1651,7 @@ if __name__ == '__main__':
             worker_process2.join()
             worker_process3.join()
             worker_process4.join()
+            worker_process5.join()
             print('*** Done')
             
         else:
