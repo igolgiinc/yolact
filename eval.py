@@ -44,6 +44,16 @@ import requests
 # To time responses
 from timeit import default_timer as default_timeit_timer
 
+# To handle CTRL-C
+import signal
+import sys
+
+def signal_handler(sig, frame):
+    print('You pressed Ctrl+C! Quitting!')
+    sys.exit(0)
+    
+signal.signal(signal.SIGINT, signal_handler)
+
 app = Flask(__name__)
 request_queue = None
 worker_thread = None
