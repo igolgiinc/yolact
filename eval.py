@@ -33,6 +33,7 @@ import timeit
 from flask import Flask
 from flask import request, jsonify
 from queue import Queue
+from queue import Empty as Queue_Empty
 #from threading import Thread, Lock
 from multiprocessing import Process, Lock, Manager
 from multiprocessing import Queue as mpQueue
@@ -47,6 +48,8 @@ from timeit import default_timer as default_timeit_timer
 # To handle CTRL-C
 import signal
 import sys
+
+INFERENCE_QUEUE_GET_TIMEOUT = 1
 
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C! Quitting!')
@@ -180,7 +183,9 @@ def flask_evaluate(process_id, input_queue, inference_queue):
             # print(" * output_filepath: %s" % (out,))
             
 
+        print(" * Put item in inference queue")
         inference_queue.put((request_json["input"], out,))
+        print(" * inference queue after put | size=", inference_queue.qsize())
         
         #with torch.no_grad():
         #    evalimage(net, request_json["input"], out)
@@ -1459,16 +1464,25 @@ if __name__ == '__main__':
             net.detect.use_fast_nms = args.fast_nms
             cfg.mask_proto_debug = args.mask_proto_debug
             while True:
-                print(' * 0: Looking for the next item in inference_queue')
-                (input_path, output_path,) = inference_queue.get()
-                with torch.no_grad():
-                    evalimage(net, input_path, output_path, contours_json, results_json, contours_json_status_lock)
+                if args.flask_debug_mode:
+                    print(' * 0: Looking for the next item in inference_queue')
+                try:
+                    (input_path, output_path,) = inference_queue.get(timeout=INFERENCE_QUEUE_GET_TIMEOUT)
+                    #(input_path, output_path,) = inference_queue.get()
+                except Queue_Empty as error:
+                    if args.flask_debug_mode:
+                        print(" * inference queue: timeout occurred | size=", inference_queue.qsize())
+                    continue
+                else:
+                    # print(" * Queue not empty")
+                    with torch.no_grad():
+                        evalimage(net, input_path, output_path, contours_json, results_json, contours_json_status_lock)
             
-            #print '*** Main thread waiting'
+            print('*** Main process waiting')
             #request_queue.join()
             worker_process1.join()
             worker_process2.join()
-            #print '*** Done'
+            print('*** Done')
         else:
             evaluate(net, dataset)
 
