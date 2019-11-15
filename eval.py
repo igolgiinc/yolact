@@ -56,25 +56,18 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 app = Flask(__name__)
-start_queue_timer = None
-end_queue_timer = None
 
 @app.route("/api/v0/classify", methods = ['POST'])
 @app.route("/api/v0/classify/", methods = ['POST'])
 def handle_post():
 
-    global start_queue_timer
-    
+    start_request_timer = default_timeit_timer()
+
     content = request.json
-    #print(content)
-    print(' * Queuing:', content)
-    start_queue_timer = default_timeit_timer()
-    request_queue.put(content)
-
-    print(' * Config item: ', app.config['contours_json'])
-
+    if args.flask_debug_mode:
+        print(' * Queuing:', content)
+        
     content["id"] = 0
-
     contours_json = app.config['contours_json']
     contours_json_status_lock = app.config['contours_json_status_lock']
 
@@ -82,6 +75,12 @@ def handle_post():
     contours_json["status"] = "running"
     contours_json_status_lock.release()
     print(" * Set status to running")
+
+    pull_queue = app.config['pull_queue']
+    pull_queue.put((content, start_request_timer,))
+
+    # print(' * Config item: ', app.config['contours_json'])
+
     return jsonify(content), 201
 
 @app.route("/api/v0/classify/<classify_id>", methods = ['GET'])
@@ -148,49 +147,11 @@ def get_url_using_requests_lib(url_name, **kwargs):
                 retval_expect = -1
                 
         return response, retval_expect
-    
-def flask_evaluate(process_id, input_queue, pull_queue):
-    """This is the worker thread function.
-    It processes items in the queue one after
-    another.
-    """
-    global start_queue_timer, end_queue_timer
-    
-    print(" * Inside worker process for flask_evaluate")
-    # print(" * input_queue: ", input_queue)
-    
-    while True:
-        print(' * %s: Looking for the next item in request_queue' % process_id)
-        request_json = input_queue.get()
-        end_queue_timer = default_timeit_timer()
-        if start_queue_timer and end_queue_timer:
-            print(" * Got item from queue in %0.4f ms: " % ((end_queue_timer - start_queue_timer) * 1000.0), request_json)
-        else:
-            print(" * Got item from queue: ", request_json)
 
-        start_req_handling_timer = default_timeit_timer()
-        
-        # we just pretend and sleep
-        if "output_filepath" in request_json:
-            if request_json["output_filepath"].endswith(".jpg") or request_json["output_filepath"].endswith(".png"):
-                out = request_json["output_filepath"]
-            else:
-                out = request_json["output_filepath"] + ".png"
-        else:
-            out = request_json["output_dir"] + request_json["input"].rsplit("/", 1)[1]
-            # print(" * output_filepath: %s" % (out,))
-            
-
-        print(" * Put item in pull queue")
-        pull_queue.put((request_json["input"], out,))
-        print(" * pull queue after put | size=", pull_queue.qsize())
-        
-        end_req_handling_timer = default_timeit_timer()
-        print(" * Request handled in %0.4f ms" % ((end_req_handling_timer - start_req_handling_timer) * 1000),)
-
-def flask_server_run(process_id, flask_port, contours_json, results_json, status_lock):
+def flask_server_run(process_id, flask_port, pull_queue, contours_json, results_json, status_lock):
     print(" * Inside worker process for flask_server_run")
 
+    app.config['pull_queue'] = pull_queue
     app.config['contours_json'] = contours_json
     app.config['results_json'] = results_json
     app.config['contours_json_status_lock'] = status_lock
@@ -210,21 +171,53 @@ def pull_url_to_file(process_id, pull_queue, img_read_queue, contours_json, resu
         if args.flask_debug_mode:
             print(' * 0: Looking for the next item in pull_queue')
         try:
-            (input_path, output_path,) = pull_queue.get(timeout=QUEUE_GET_TIMEOUT)
+            (request_json, start_request_timer,) = pull_queue.get(timeout=QUEUE_GET_TIMEOUT)
         except Queue_Empty as error:
             if args.flask_debug_mode:
                 print(" * pull queue: timeout occurred | size=", pull_queue.qsize())
             continue
         else:
+            
+            start_pull_timer = default_timeit_timer()
+            print(" * Got item from request_queue: ", request_json)
 
-            start_url_handling_timer = default_timeit_timer()
+            if "input" in request_json and request_json["input"]:
+                input_path = request_json["input"]
+            else:
+                status_lock.acquire()
+                contours_json["status"] = "finished"
+                status_lock.release()
+                print(" * Set status to finished")
+                contours_json["error_description"] = "Invalid input JSON, missing 'input' key"
+                continue
+            
+            if "output_filepath" in request_json and request_json["output_filepath"]:
+                if request_json["output_filepath"].endswith(".jpg") or request_json["output_filepath"].endswith(".png"):
+                    output_path = request_json["output_filepath"]
+                else:
+                    output_path = request_json["output_filepath"] + ".png"
+            else:
+                if "output_dir" in request_json and request_json["output_dir"]:
+                    output_path = request_json["output_dir"] + request_json["input"].rsplit("/", 1)[1]
+                else:
+                    status_lock.acquire()
+                    contours_json["status"] = "finished"
+                    status_lock.release()
+                    print(" * Set status to finished")
+                    contours_json["error_description"] = "Invalid input JSON, missing 'output_dir' key"
+                    continue
+
             local_img_path, url_valid_flag = get_local_filepath(input_path)
-            end_url_handling_timer = default_timeit_timer()
-
+            end_pull_timer = default_timeit_timer()
+            url_handling_time_ms = ((end_pull_timer - start_pull_timer) * 1000.0)
+            print(" * URL handling time: %0.4f ms" % (url_handling_time_ms,))
+            
             if url_valid_flag:
-                print(" * Put item in img_read queue")
-                img_read_queue.put((local_img_path, output_path, input_path,))
-                print(" * img_read queue after put | size=", img_read_queue.qsize())
+                if args.flask_debug_mode:
+                    print(" * Put item in img_read queue")
+                img_read_queue.put((local_img_path, output_path, input_path, start_request_timer,))
+                if args.flask_debug_mode:
+                    print(" * img_read queue after put | size=", img_read_queue.qsize())
             else:
                 num_dets_to_consider = 0
                 results_json["num_labels_detected"] = num_dets_to_consider
@@ -250,7 +243,7 @@ def read_imgfile(process_id, img_read_queue, inference_queue, contours_json, res
         if args.flask_debug_mode:
             print(' * 0: Looking for the next item in img_read_queue')
         try:
-            (local_path, output_path, orig_path,) = img_read_queue.get(timeout=QUEUE_GET_TIMEOUT)
+            (local_path, output_path, orig_path, start_request_timer,) = img_read_queue.get(timeout=QUEUE_GET_TIMEOUT)
         except Queue_Empty as error:
             if args.flask_debug_mode:
                 print(" * img_read queue: timeout occurred | size=", img_read_queue.qsize())
@@ -263,7 +256,9 @@ def read_imgfile(process_id, img_read_queue, inference_queue, contours_json, res
             cv2_img_obj = cv2.imread(local_path)
             #print(" * cv2_img_obj: %s" % (str(cv2_img_obj),))
             end_file_read_timer = default_timeit_timer()
-            
+            file_read_time_ms = ((end_file_read_timer - start_file_read_timer) * 1000.0)
+            print(" * File read time: %0.4f ms" % (file_read_time_ms,))
+
             if cv2_img_obj is None:
 
                 print(" * OpenCV could not read input image file at: %s. Bad image file?" % (path,))
@@ -281,10 +276,11 @@ def read_imgfile(process_id, img_read_queue, inference_queue, contours_json, res
                     contours_json["error_description"] = "Invalid input file %s" % (original_path,)
 
             else:
-
-                print(" * Put item in inference queue")
-                inference_queue.put((local_path, output_path, orig_path, cv2_img_obj,))
-                print(" * inference queue after put | size=", inference_queue.qsize())
+                if args.flask_debug_mode:
+                    print(" * Put item in inference queue")
+                inference_queue.put((local_path, output_path, orig_path, cv2_img_obj, start_request_timer,))
+                if args.flask_debug_mode:
+                    print(" * inference queue after put | size=", inference_queue.qsize())
 
 
 def write_imgfile(process_id, img_write_queue, contours_json, results_json, status_lock):
@@ -299,7 +295,7 @@ def write_imgfile(process_id, img_write_queue, contours_json, results_json, stat
         if args.flask_debug_mode:
             print(' * 0: Looking for the next item in img_write_queue')
         try:
-            (output_path, img_numpy_obj,) = img_write_queue.get(timeout=QUEUE_GET_TIMEOUT)
+            (output_path, img_numpy_obj, start_request_timer,) = img_write_queue.get(timeout=QUEUE_GET_TIMEOUT)
         except Queue_Empty as error:
             if args.flask_debug_mode:
                 print(" * img_write queue: timeout occurred | size=", img_write_queue.qsize())
@@ -309,7 +305,11 @@ def write_imgfile(process_id, img_write_queue, contours_json, results_json, stat
             start_outputimg_timer = default_timeit_timer()
             cv2.imwrite(output_path, img_numpy_obj)
             end_outputimg_timer = default_timeit_timer()
-            
+
+            out_imgwrite_time_ms = ((end_outputimg_timer - start_outputimg_timer) * 1000.0)
+            request_handling_time_ms = ((end_outputimg_timer - start_request_timer) * 1000.0)
+            print(" * Output img writeout time: %0.4f ms" % (out_imgwrite_time_ms,))
+            print(" * Request handling time: %0.4f ms" % (request_handling_time_ms,))
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -467,7 +467,8 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
     print(" * args.contours_json: ", args.contours_json)
     if args.contours_json:
         results_json_dict["num_labels_detected"] = num_dets_to_consider
-        print(" * results_json: ", results_json_dict)
+        if args.flask_debug_mode:
+            print(" * results_json: ", results_json_dict)
         
     if num_dets_to_consider == 0:
         if args.contours_json:
@@ -991,9 +992,9 @@ def get_local_filepath(imgpath:str):
 
     return local_filepath, pulled_file
 
-def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=None, results_json=None, request_status_lock=None, original_path=None, img_write_queue=None):
+def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=None, results_json=None, request_status_lock=None, \
+                   original_path=None, img_write_queue=None, start_request_timer=None, start_inference_timer=None):
     
-    start_preds_timer = default_timeit_timer()
     try:
         frame = torch.from_numpy(cv2_img_obj).cuda().float()
     except TypeError:
@@ -1002,14 +1003,17 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=No
     else:
         batch = FastBaseTransform()(frame.unsqueeze(0))
         preds = net(batch)
-    end_preds_timer = default_timeit_timer()
         
+    end_inference_timer = default_timeit_timer()
+    inference_time_ms = ((end_inference_timer - start_inference_timer) * 1000.0)
+    print(" * Inference time: %0.4f ms" % (inference_time_ms,))
+
     if args.contours_json:
         contours_json["input"] = original_path
-        # HACK!! As per https://stackoverflow.com/questions/37510076/unable-to-update-nested-dictionary-value-in-multiprocessings-manager-dict
         results_json["num_labels_detected"] = 0
-        
-        print(" * results_json_results (initial): ", results_json)
+
+        if args.flask_debug_mode:
+            print(" * results_json_results (initial): ", results_json)
         
         contours_json["output_urlpath"] = args.flask_output_webserver + save_path.rsplit("/", 1)[1]
 
@@ -1035,22 +1039,11 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, contours_json=No
             img_numpy = img_numpy[:, :, (2, 1, 0)]
 
         if save_path is not None:
-
-            print(" * Put item in img_write queue")
-            img_write_queue.put((save_path, img_numpy,))
-            print(" * img_write queue after put | size=", img_write_queue.qsize())
-            
-            '''
-            url_handling_time_ms = ((end_url_handling_timer - start_url_handling_timer) * 1000)
-            file_read_time_ms = ((end_file_read_timer - start_file_read_timer) * 1000.0)
-            preds_time_ms = ((end_preds_timer - start_preds_timer) * 1000.0)
-            prep_display_time_ms = ((end_prep_display_timer - start_prep_display_timer) * 1000.0)
-            output_img_writeout_time_ms = ((end_outputimg_timer - start_outputimg_timer) * 1000.0)
-            sum_time_ms = url_handling_time_ms + file_read_time_ms + preds_time_ms + prep_display_time_ms + output_img_writeout_time_ms
-            print(" * URL-handling-time: %0.4f ms, File-read-time: %0.4f ms, Preds-time: %0.4f ms, Prep-display-timer: %0.4f ms, Output-writeout-timer: %0.4f ms, sum: %0.4f ms, FPS: %0.4f" % \
-                  ( url_handling_time_ms, file_read_time_ms, preds_time_ms, prep_display_time_ms, output_img_writeout_time_ms, sum_time_ms, 1000.0/sum_time_ms))
-            '''
-                
+            if args.flask_debug_mode:
+                print(" * Put item in img_write queue")
+            img_write_queue.put((save_path, img_numpy, start_request_timer,))
+            if args.flask_debug_mode:
+                print(" * img_write queue after put | size=", img_write_queue.qsize())                
             
 def evalimage(net:Yolact, path:str, save_path:str=None, contours_json=None, results_json=None, request_status_lock=None, original_path=None):    
                 
@@ -1608,7 +1601,7 @@ if __name__ == '__main__':
             results_json = manager.dict()
             contours_json_status_lock = manager.Lock()
             
-            request_queue = mpQueue()
+            # request_queue = mpQueue()
             pull_queue = mpQueue()
             img_read_queue = mpQueue()
             inference_queue = mpQueue()
@@ -1616,12 +1609,11 @@ if __name__ == '__main__':
 
             contours_json_status_lock = Lock()
 
-            worker_process1 = Process(target=flask_evaluate, args=(1, request_queue, pull_queue))
-            worker_process2 = Process(target=flask_server_run, args=(2, args.flask_port, contours_json, results_json, contours_json_status_lock))
+            worker_process2 = Process(target=flask_server_run, args=(2, args.flask_port, pull_queue, contours_json, results_json, contours_json_status_lock))
             worker_process3 = Process(target=pull_url_to_file, args=(3, pull_queue, img_read_queue, contours_json, results_json, contours_json_status_lock))
             worker_process4 = Process(target=read_imgfile, args=(4, img_read_queue, inference_queue, contours_json, results_json, contours_json_status_lock))
             worker_process5 = Process(target=write_imgfile, args=(4, img_write_queue, contours_json, results_json, contours_json_status_lock))
-            worker_process1.start()
+
             worker_process2.start()
             worker_process3.start()
             worker_process4.start()
@@ -1633,18 +1625,21 @@ if __name__ == '__main__':
                 if args.flask_debug_mode:
                     print(' * 0: Looking for the next item in inference_queue')
                 try:
-                    (local_path, output_path, orig_path, cv2_img_obj,) = inference_queue.get(timeout=QUEUE_GET_TIMEOUT)
+                    (local_path, output_path, orig_path, cv2_img_obj, start_request_time,) = inference_queue.get(timeout=QUEUE_GET_TIMEOUT)
                 except Queue_Empty as error:
                     if args.flask_debug_mode:
                         print(" * inference queue: timeout occurred | size=", inference_queue.qsize())
                     continue
                 else:
+
+                    start_inference_timer = default_timeit_timer()
                     # print(" * Queue not empty")
                     with torch.no_grad():
-                        eval_cv2_image(net, cv2_img_obj, output_path, contours_json, results_json, contours_json_status_lock, orig_path, img_write_queue)
+                        eval_cv2_image(net, cv2_img_obj, output_path, contours_json, results_json, contours_json_status_lock,\
+                                       orig_path, img_write_queue, start_request_time, start_inference_timer)
             
             print('*** Main process waiting')
-            worker_process1.join()
+
             worker_process2.join()
             worker_process3.join()
             worker_process4.join()
