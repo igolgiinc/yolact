@@ -56,8 +56,6 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 app = Flask(__name__)
-request_queue = None
-worker_thread = None
 start_queue_timer = None
 end_queue_timer = None
 
@@ -1646,7 +1644,6 @@ if __name__ == '__main__':
                         eval_cv2_image(net, cv2_img_obj, output_path, contours_json, results_json, contours_json_status_lock, orig_path, img_write_queue)
             
             print('*** Main process waiting')
-            #request_queue.join()
             worker_process1.join()
             worker_process2.join()
             worker_process3.join()
