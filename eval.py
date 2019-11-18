@@ -251,13 +251,16 @@ def pull_url_to_file(process_id):
                 if "output_dir" in request_json and request_json["output_dir"]:
                     output_path = request_json["output_dir"] + request_json["input"].rsplit("/", 1)[1]
                 else:
+                    output_path = None
+                    '''
                     with shared_status_array[target_post_request_id].get_lock():
                         shared_status_array[target_post_request_id].value = FINISHED_STATUS
                     print(" * Set status to finished for id: ", target_post_request_id)
                     contours_json["error_description"] = "Invalid input JSON, missing 'output_dir' key"
                     shared_contours_json_list[target_post_request_id] = contours_json
                     continue
-
+                    '''
+                    
             local_img_path, url_valid_flag = get_local_filepath(input_path)
             end_pull_timer = default_timeit_timer()
             url_handling_time_ms = ((end_pull_timer - start_pull_timer) * 1000.0)
@@ -1074,8 +1077,9 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
 
         if args.flask_debug_mode:
             print(" * results_json_results (initial): ", results_json)
-        
-        contours_json["output_urlpath"] = args.flask_output_webserver + save_path.rsplit("/", 1)[1]
+
+        if save_path is not None: 
+            contours_json["output_urlpath"] = args.flask_output_webserver + save_path.rsplit("/", 1)[1]
 
         #contours_json["status"] = "running"
 
@@ -1107,6 +1111,21 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
             img_write_queue.put((save_path, img_numpy, start_request_timer, target_post_request_id,))
             if args.flask_debug_mode:
                 print(" * img_write queue after put | size=", img_write_queue.qsize())                
+        else:
+            if args.flask_debug_mode:
+                print(" * About to set status to finished")
+            if args.run_with_flask:
+                with shared_status_array[target_post_request_id].get_lock():
+                    shared_status_array[target_post_request_id].value = FINISHED_STATUS
+                print(" * Set status to finished for id: ", target_post_request_id)
+
+            if args.flask_debug_mode:
+                for key in range(0, MAX_PARALLEL_FRAMES):
+                    print(" * shared_status_array (after handle_post update) i=", key, ", val: ", shared_status_array[key].value)
+
+            request_handling_time_ms = ((end_prep_display_timer - start_request_timer) * 1000.0)
+            print(" * Request handling time: %0.4f ms" % (request_handling_time_ms,))
+
             
 def evalimage(net:Yolact, path:str, save_path:str=None):    
          
