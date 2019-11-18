@@ -50,7 +50,7 @@ import signal
 import sys
 
 QUEUE_GET_TIMEOUT = 1
-MAX_PARALLEL_FRAMES = 5
+MAX_PARALLEL_FRAMES = 20
 IDLE_STATUS = 0
 RUNNING_STATUS = 1
 FINISHED_STATUS = 2
@@ -128,7 +128,7 @@ def handle_get(classify_id):
     try:
         classify_id_int = int(classify_id)
     except ValueError as e:
-        response_json = {"error" : "Invalid GET request, ID: %s does not exist" % (classify_id,)}
+        response_json = {"error" : "Invalid GET request, ID: %s is not an integer" % (classify_id,)}
     else:
 
         print(' * HTTP GET for classify_id: ', classify_id_int)
@@ -155,9 +155,11 @@ def handle_get(classify_id):
                 response_json["status"] = "finished"
                 
             response_json["results"] = results_json.copy()
+            response_json["id"] = classify_id_int
             
         else:
-            response_json = {"error" : "Invalid GET request, ID: %s is out of the range supported (min=0, max=%d) supported" % (classify_id, MAX_PARALLEL_FRAMES-1,)}
+            response_json = {"error" : "Invalid GET request, ID: %s is out of the range supported (min=0, max=%d) supported" % (classify_id, MAX_PARALLEL_FRAMES-1,), \
+                             "id": classify_id_int}
             
     return jsonify(response_json)
 
@@ -205,7 +207,6 @@ def flask_server_run(process_id):
     app.config['pull_queue'] = pull_queue    
     app.run(host='0.0.0.0', port=args.flask_port)
 
-        
 def pull_url_to_file(process_id):
     """This is the worker thread function.
     It processes items in the queue one after
