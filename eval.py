@@ -50,10 +50,10 @@ import signal
 import sys
 
 QUEUE_GET_TIMEOUT = 1
-MAX_PARALLEL_FRAMES = 20
 IDLE_STATUS = 0
 RUNNING_STATUS = 1
 FINISHED_STATUS = 2
+REQ_HANDLING_TIMEOUT_MS = 200.0
 
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C! Quitting!')
@@ -79,10 +79,33 @@ def handle_post():
 
     if args.flask_debug_mode:
         print(" * target_post_request_id (POST): ", target_post_request_id)
-        for key in range(0, MAX_PARALLEL_FRAMES):
+        for key in range(0, args.flask_max_parallel_frames):
             print(" * shared_status_array (handle_post) i=", key, ", val: ", shared_status_array[key].value)
 
     if not (cur_status == RUNNING_STATUS):
+        
+        if (cur_status == FINISHED_STATUS):
+
+            cur_readstatus = False
+            with shared_readstatus_array[target_post_request_id].get_lock():
+                cur_readstatus = shared_readstatus_array[target_post_request_id].value
+
+            if cur_readstatus == False:
+
+                with shared_readtimestamp_array[target_post_request_id].get_lock():
+                    req_readtimestamp = shared_readtimestamp_array[target_post_request_id].value
+
+                time_passed_for_req_ms = ((start_request_timer - req_readtimestamp) * 1000.0)
+                print(" * req handling time: %0.4f ms" % (time_passed_for_req_ms,))
+                
+                if (time_passed_for_req_ms <= REQ_HANDLING_TIMEOUT_MS):
+                    print(" * This entry has not been read yet by GET. Cannot over-write this entry yet")
+                    content["id"] = target_post_request_id
+                    content["error_description"] = "All available slots busy. Try again in a bit."
+                    return jsonify(content), 503
+                else:
+                    print(" * This entry has not been read yet by GET. But timeout of %0.1fms is exceeded so over-writing this entry" % (REQ_HANDLING_TIMEOUT_MS,))
+                    
         content["id"] = target_post_request_id
         contours_json = shared_contours_json_list[target_post_request_id]
         print(" * Set status to running, target_post_request_id: ", target_post_request_id, ", cur_status: ", cur_status)
@@ -101,13 +124,19 @@ def handle_post():
         with shared_status_array[target_post_request_id].get_lock():
             shared_status_array[target_post_request_id].value = RUNNING_STATUS
 
+        with shared_readstatus_array[target_post_request_id].get_lock():
+            shared_readstatus_array[target_post_request_id].value = False
+
+        with shared_readtimestamp_array[target_post_request_id].get_lock():
+            shared_readtimestamp_array[target_post_request_id].value = start_request_timer
+
         with cur_post_request_id.get_lock():
-            cur_post_request_id.value = ((cur_post_request_id.value + 1) % MAX_PARALLEL_FRAMES)
+            cur_post_request_id.value = ((cur_post_request_id.value + 1) % args.flask_max_parallel_frames)
             target_post_request_id = cur_post_request_id.value
 
         if args.flask_debug_mode:
             print(" * target_post_request_id (after increment): ", target_post_request_id)
-            for key in range(0, MAX_PARALLEL_FRAMES):
+            for key in range(0, args.flask_max_parallel_frames):
                 print(" * shared_status_array (after handle_post update) i=", key, ", val: ", shared_status_array[key].value)
 
         pull_queue = app.config['pull_queue']
@@ -132,7 +161,7 @@ def handle_get(classify_id):
     else:
 
         print(' * HTTP GET for classify_id: ', classify_id_int)
-        if (classify_id_int >= 0) and (classify_id_int < MAX_PARALLEL_FRAMES):
+        if (classify_id_int >= 0) and (classify_id_int < args.flask_max_parallel_frames):
 
             if args.flask_debug_mode:
                 print(' * Config item in handle_get: ', shared_contours_json_list[classify_id_int])
@@ -153,12 +182,20 @@ def handle_get(classify_id):
                 response_json["status"] = "running"
             else:
                 response_json["status"] = "finished"
+
+                cur_readstatus = False
+                with shared_readstatus_array[classify_id_int].get_lock():
+                    cur_readstatus = shared_readstatus_array[classify_id_int].value
+                
+                if cur_readstatus == False:
+                    with shared_readstatus_array[classify_id_int].get_lock():
+                        shared_readstatus_array[classify_id_int].value = True
                 
             response_json["results"] = results_json.copy()
             response_json["id"] = classify_id_int
             
         else:
-            response_json = {"error" : "Invalid GET request, ID: %s is out of the range supported (min=0, max=%d) supported" % (classify_id, MAX_PARALLEL_FRAMES-1,), \
+            response_json = {"error" : "Invalid GET request, ID: %s is out of the range supported (min=0, max=%d) supported" % (classify_id, args.flask_max_parallel_frames-1,), \
                              "id": classify_id_int}
             
     return jsonify(response_json)
@@ -368,7 +405,7 @@ def write_imgfile(process_id):
                 print(" * Set status to finished for id: ", target_post_request_id)
 
             if args.flask_debug_mode:
-                for key in range(0, MAX_PARALLEL_FRAMES):
+                for key in range(0, args.flask_max_parallel_frames):
                     print(" * shared_status_array (after handle_post update) i=", key, ", val: ", shared_status_array[key].value)
 
             out_imgwrite_time_ms = ((end_outputimg_timer - start_outputimg_timer) * 1000.0)
@@ -470,6 +507,8 @@ def parse_args(argv=None):
                         help='Port to run web-service on')
     parser.add_argument('--flask_debug_mode', default=False, type=bool,
                         help='Accept HTTP requests and run in debug mode where its slower but with more info. printed out')
+    parser.add_argument('--flask_max_parallel_frames', default=20, type=int,
+                        help='Max. number of parallel frames/requests handled/buffered per second')
 
     parser.set_defaults(no_bar=False, display=False, resume=False, output_coco_json=False, output_web_json=False, shuffle=False,
                         benchmark=False, no_sort=False, no_hash=False, mask_proto_debug=False, crop=True, detect=False)
@@ -1120,7 +1159,7 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
                 print(" * Set status to finished for id: ", target_post_request_id)
 
             if args.flask_debug_mode:
-                for key in range(0, MAX_PARALLEL_FRAMES):
+                for key in range(0, args.flask_max_parallel_frames):
                     print(" * shared_status_array (after handle_post update) i=", key, ", val: ", shared_status_array[key].value)
 
             request_handling_time_ms = ((end_prep_display_timer - start_request_timer) * 1000.0)
@@ -1613,7 +1652,7 @@ if __name__ == '__main__':
 
             contours_json_list = []
             results_json_list = []
-            for i in range(0, MAX_PARALLEL_FRAMES):
+            for i in range(0, args.flask_max_parallel_frames):
                 contours_json_list.append({ "input": "", "error_description": "", "output_urlpath": "", })
                 results_json_list.append({ "num_labels_detected": -1, "left": [], "top": [], "bottom": [], "right": [], "confidence": [], \
                                            "labels": [], "contours": [], "num_contour_points": []})
@@ -1624,9 +1663,13 @@ if __name__ == '__main__':
             cur_post_request_id = Value('i', 0)
             # cur_get_request_id = manager.Value('i', 0)
             shared_status_array = []
-            for idx in range(0, MAX_PARALLEL_FRAMES):
+            shared_readstatus_array = []
+            shared_readtimestamp_array = []
+            for idx in range(0, args.flask_max_parallel_frames):
                 shared_status_array.append(Value('i', 0))
-            
+                shared_readstatus_array.append(Value('b', False))
+                shared_readtimestamp_array.append(Value('d', -1.0))
+                
             pull_queue = mpQueue()
             img_read_queue = mpQueue()
             inference_queue = mpQueue()
