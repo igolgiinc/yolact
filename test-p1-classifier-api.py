@@ -100,7 +100,11 @@ def send_get_request(response_id):
 
 if __name__ == "__main__":
     response_id_list = []
-    for i in range(1,41):
+
+    response_id = send_post_request()
+    response_id_list.append(response_id)
+
+    for i in range(1,2187):
         print(" * i = ", i)
         response_id = send_post_request("test_%04d" % i + ".jpg")
         response_id_list.append(response_id)
@@ -110,7 +114,7 @@ if __name__ == "__main__":
                 if response_id >= 0:
                     send_get_request(response_id)
             response_id_list = []
-                    
+    
     for response_id in response_id_list:
         if response_id >= 0:
             send_get_request(response_id)
