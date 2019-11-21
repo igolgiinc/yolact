@@ -77,8 +77,8 @@ def handle_post():
     with shared_status_array[target_post_request_id].get_lock():
         cur_status = shared_status_array[target_post_request_id].value
 
+    print(" * target_post_request_id (POST): ", target_post_request_id)
     if args.flask_debug_mode:
-        print(" * target_post_request_id (POST): ", target_post_request_id)
         for key in range(0, args.flask_max_parallel_frames):
             print(" * shared_status_array (handle_post) i=", key, ", val: ", shared_status_array[key].value)
 
@@ -351,7 +351,7 @@ def read_imgfile(process_id):
 
             if cv2_img_obj is None:
 
-                print(" * OpenCV could not read input image file at: %s. Bad image file?" % (path,))
+                print(" * OpenCV could not read input image file at: %s. Bad image file?" % (local_path,))
                 
                 contours_json = shared_contours_json_list[target_post_request_id]
                 if args.flask_debug_mode:
@@ -360,7 +360,7 @@ def read_imgfile(process_id):
                     with shared_status_array[target_post_request_id].get_lock():
                         shared_status_array[target_post_request_id].value = FINISHED_STATUS
                     print(" * Set status to finished for id: ", target_post_request_id)
-                    contours_json["error_description"] = "Invalid input file %s" % (original_path,)
+                    contours_json["error_description"] = "Invalid input file %s" % (local_path,)
                     shared_contours_json_list[target_post_request_id] = contours_json
                     
             else:
