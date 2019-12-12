@@ -53,7 +53,6 @@ QUEUE_GET_TIMEOUT = 1
 IDLE_STATUS = 0
 RUNNING_STATUS = 1
 FINISHED_STATUS = 2
-REQ_HANDLING_TIMEOUT_MS = 200.0
 
 def signal_handler(sig, frame):
     print('You pressed Ctrl+C! Quitting!')
@@ -98,13 +97,13 @@ def handle_post():
                 time_passed_for_req_ms = ((start_request_timer - req_readtimestamp) * 1000.0)
                 print(" * req handling time: %0.4f ms" % (time_passed_for_req_ms,))
                 
-                if (time_passed_for_req_ms <= REQ_HANDLING_TIMEOUT_MS):
+                if (time_passed_for_req_ms <= args.flask_request_timeout_ms):
                     print(" * This entry has not been read yet by GET. Cannot over-write this entry yet")
                     content["id"] = target_post_request_id
                     content["error_description"] = "All available slots busy. Try again in a bit."
                     return jsonify(content), 503
                 else:
-                    print(" * This entry has not been read yet by GET. But timeout of %0.1fms is exceeded so over-writing this entry" % (REQ_HANDLING_TIMEOUT_MS,))
+                    print(" * This entry has not been read yet by GET. But timeout of %0.1fms is exceeded so over-writing this entry" % (args.flask_request_timeout_ms,))
                     
         content["id"] = target_post_request_id
         contours_json = shared_contours_json_list[target_post_request_id]
@@ -509,6 +508,8 @@ def parse_args(argv=None):
                         help='Accept HTTP requests and run in debug mode where its slower but with more info. printed out')
     parser.add_argument('--flask_max_parallel_frames', default=20, type=int,
                         help='Max. number of parallel frames/requests handled/buffered per second')
+    parser.add_argument('--flask_request_timeout_ms', default=200.0, type=float,
+                        help='Timeout in ms before existing results are over-written for a prior POST request that has not yet seen the corresponding GET')
 
     parser.set_defaults(no_bar=False, display=False, resume=False, output_coco_json=False, output_web_json=False, shuffle=False,
                         benchmark=False, no_sort=False, no_hash=False, mask_proto_debug=False, crop=True, detect=False)
@@ -1068,7 +1069,7 @@ def get_local_filepath(imgpath:str):
     else:
         split_request_json = imgpath.rsplit("/", 1)
         #print(split_request_json)
-        local_filepath = "/run/p1inputs/" + split_request_json[1]
+        local_filepath = "/root/p1inputs/" + split_request_json[1]
         print(" * About to pull from %s into %s" % (imgpath, local_filepath,))
         response, retval = get_url_using_requests_lib(imgpath, stream=True)
         if response is not None:
