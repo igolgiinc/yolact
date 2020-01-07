@@ -156,7 +156,9 @@ def handle_post():
     except NameError:
         zmq_client_socket = app.config['zmq_client_socket']
         print(" * Sending msg to zmq_server...")
-        zmq_client_socket.send_json(content)        
+        post_request = {"cmd": "post",
+                        "content": content}
+        zmq_client_socket.send_json(post_request)
         json_msg = zmq_client_socket.recv_json()
         return_code = json_msg["return_code"]
         json_content = json_msg["updated_content"]
@@ -275,14 +277,15 @@ def zmq_server_run(process_id):
         print(" * Waiting for next request from zmq client...")
         request_json = zmq_server_socket.recv_json()
         start_request_timer = default_timeit_timer()
-        content = request_json
-        print(" * Received request: %s" % (content,))
-        updated_content, return_code = post_request_handling(content, start_request_timer)
-        json_msg = {"updated_content": updated_content,
-                    "return_code": return_code}
-        zmq_server_socket.send_json(json_msg)
-        if (return_code == 201):
-            pull_queue.put((content, start_request_timer,))
+        if request_json["cmd"] == "post":
+            content = request_json["content"]
+            print(" * Received request: %s" % (content,))
+            updated_content, return_code = post_request_handling(content, start_request_timer)
+            json_msg = {"updated_content": updated_content,
+                        "return_code": return_code}
+            zmq_server_socket.send_json(json_msg)
+            if (return_code == 201):
+                pull_queue.put((content, start_request_timer,))
         
 def pull_url_to_file(process_id):
     """This is the worker thread function.
