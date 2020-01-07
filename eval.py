@@ -142,7 +142,49 @@ def post_request_handling(content, start_request_timer):
         content["id"] = target_post_request_id
         content["error_description"] = "All available slots busy. Try again in a bit."
         return content, 503
-    
+
+
+def get_request_handling(classify_id_int):
+
+    if (classify_id_int >= 0) and (classify_id_int < args.flask_max_parallel_frames):
+
+        if args.flask_debug_mode:
+            print(' * Config item in handle_get: ', shared_contours_json_list[classify_id_int])
+
+        contours_json = shared_contours_json_list[classify_id_int]
+        results_json = shared_results_json_list[classify_id_int]
+
+        if args.flask_debug_mode:
+            print(" * Contours JSON in GET", json.dumps(contours_json))
+
+        with shared_status_array[classify_id_int].get_lock():
+            cur_status = shared_status_array[classify_id_int].value
+
+        response_json = contours_json.copy()
+        if cur_status == IDLE_STATUS:
+            response_json["status"] = "idle"
+        elif cur_status == RUNNING_STATUS:
+            response_json["status"] = "running"
+        else:
+            response_json["status"] = "finished"
+
+            cur_readstatus = False
+            with shared_readstatus_array[classify_id_int].get_lock():
+                cur_readstatus = shared_readstatus_array[classify_id_int].value
+
+            if cur_readstatus == False:
+                with shared_readstatus_array[classify_id_int].get_lock():
+                    shared_readstatus_array[classify_id_int].value = True
+
+        response_json["results"] = results_json.copy()
+        response_json["id"] = classify_id_int
+
+    else:
+        response_json = {"error" : "Invalid GET request, ID: %s is out of the range supported (min=0, max=%d) supported" % (classify_id, args.flask_max_parallel_frames-1,), \
+                         "id": classify_id_int}
+
+    return response_json
+
 app = Flask(__name__)
 
 @app.route("/api/v0/classify", methods = ['POST'])
@@ -155,7 +197,7 @@ def handle_post():
         check_use_flask_devserver = args.use_flask_devserver
     except NameError:
         zmq_client_socket = app.config['zmq_client_socket']
-        print(" * Sending msg to zmq_server...")
+        print(" * Sending POST request to zmq_server...")
         post_request = {"cmd": "post",
                         "content": content}
         zmq_client_socket.send_json(post_request)
@@ -182,42 +224,18 @@ def handle_get(classify_id):
     else:
 
         print(' * HTTP GET for classify_id: ', classify_id_int)
-        if (classify_id_int >= 0) and (classify_id_int < args.flask_max_parallel_frames):
 
-            if args.flask_debug_mode:
-                print(' * Config item in handle_get: ', shared_contours_json_list[classify_id_int])
-
-            contours_json = shared_contours_json_list[classify_id_int]
-            results_json = shared_results_json_list[classify_id_int]
-
-            if args.flask_debug_mode:
-                print(" * Contours JSON in GET", json.dumps(contours_json))
-
-            with shared_status_array[classify_id_int].get_lock():
-                cur_status = shared_status_array[classify_id_int].value
-
-            response_json = contours_json.copy()
-            if cur_status == IDLE_STATUS:
-                response_json["status"] = "idle"
-            elif cur_status == RUNNING_STATUS:
-                response_json["status"] = "running"
-            else:
-                response_json["status"] = "finished"
-
-                cur_readstatus = False
-                with shared_readstatus_array[classify_id_int].get_lock():
-                    cur_readstatus = shared_readstatus_array[classify_id_int].value
-                
-                if cur_readstatus == False:
-                    with shared_readstatus_array[classify_id_int].get_lock():
-                        shared_readstatus_array[classify_id_int].value = True
-                
-            response_json["results"] = results_json.copy()
-            response_json["id"] = classify_id_int
-            
+        try:
+            check_use_flask_devserver = args.use_flask_devserver
+        except NameError:
+            zmq_client_socket = app.config['zmq_client_socket']
+            print(" * Sending GET request to zmq_server...")
+            get_request = {"cmd": "get",
+                           "content": classify_id_int}
+            zmq_client_socket.send_json(get_request)
+            response_json = zmq_client_socket.recv_json()
         else:
-            response_json = {"error" : "Invalid GET request, ID: %s is out of the range supported (min=0, max=%d) supported" % (classify_id, args.flask_max_parallel_frames-1,), \
-                             "id": classify_id_int}
+            response_json = get_request_handling(classify_id_int)
             
     return jsonify(response_json)
 
@@ -284,9 +302,18 @@ def zmq_server_run(process_id):
             json_msg = {"updated_content": updated_content,
                         "return_code": return_code}
             zmq_server_socket.send_json(json_msg)
+
             if (return_code == 201):
                 pull_queue.put((content, start_request_timer,))
-        
+                
+        elif request_json["cmd"] == "get":
+            classify_id_int = request_json["content"]
+            response_json = get_request_handling(classify_id_int)
+            zmq_server_socket.send_json(response_json)
+
+        else:
+            print(" * Unsupported cmd received, ignoring...")
+                
 def pull_url_to_file(process_id):
     """This is the worker thread function.
     It processes items in the queue one after
