@@ -49,6 +49,9 @@ from timeit import default_timer as default_timeit_timer
 import signal
 import sys
 
+# For zeromq
+import zmq
+
 QUEUE_GET_TIMEOUT = 1
 IDLE_STATUS = 0
 RUNNING_STATUS = 1
@@ -58,15 +61,8 @@ def signal_handler(sig, frame):
     print('You pressed Ctrl+C! Quitting!')
     sys.exit(0)
 
-app = Flask(__name__)
+def post_request_handling(content, start_request_timer):
 
-@app.route("/api/v0/classify", methods = ['POST'])
-@app.route("/api/v0/classify/", methods = ['POST'])
-def handle_post():
-
-    start_request_timer = default_timeit_timer()
-
-    content = request.json
     if args.flask_debug_mode:
         print(' * Queuing:', content)
 
@@ -82,7 +78,7 @@ def handle_post():
             print(" * shared_status_array (handle_post) i=", key, ", val: ", shared_status_array[key].value)
 
     if not (cur_status == RUNNING_STATUS):
-        
+
         if (cur_status == FINISHED_STATUS):
 
             cur_readstatus = False
@@ -96,15 +92,15 @@ def handle_post():
 
                 time_passed_for_req_ms = ((start_request_timer - req_readtimestamp) * 1000.0)
                 print(" * req handling time: %0.4f ms" % (time_passed_for_req_ms,))
-                
+
                 if (time_passed_for_req_ms <= args.flask_request_timeout_ms):
                     print(" * This entry has not been read yet by GET. Cannot over-write this entry yet")
                     content["id"] = target_post_request_id
                     content["error_description"] = "All available slots busy. Try again in a bit."
-                    return jsonify(content), 503
+                    return content, 503
                 else:
                     print(" * This entry has not been read yet by GET. But timeout of %0.1fms is exceeded so over-writing this entry" % (args.flask_request_timeout_ms,))
-                    
+
         content["id"] = target_post_request_id
         contours_json = shared_contours_json_list[target_post_request_id]
         print(" * Set status to running, target_post_request_id: ", target_post_request_id, ", cur_status: ", cur_status)
@@ -119,7 +115,7 @@ def handle_post():
         results_json = { "num_labels_detected": 0, "left": [], "top": [], "bottom": [], "right": [], "confidence": [], \
                          "labels": [], "contours": [], "num_contour_points": []}
         shared_results_json_list[target_post_request_id] = results_json
-        
+
         with shared_status_array[target_post_request_id].get_lock():
             shared_status_array[target_post_request_id].value = RUNNING_STATUS
 
@@ -138,18 +134,42 @@ def handle_post():
             for key in range(0, args.flask_max_parallel_frames):
                 print(" * shared_status_array (after handle_post update) i=", key, ", val: ", shared_status_array[key].value)
 
-        pull_queue = app.config['pull_queue']
-        pull_queue.put((content, start_request_timer,))
+        return content, 201
 
-        return jsonify(content), 201
-        
     else:
 
         print(" * cur_status (POST): ", cur_status)
         content["id"] = target_post_request_id
         content["error_description"] = "All available slots busy. Try again in a bit."
-        return jsonify(content), 503
+        return content, 503
+    
+app = Flask(__name__)
 
+@app.route("/api/v0/classify", methods = ['POST'])
+@app.route("/api/v0/classify/", methods = ['POST'])
+def handle_post():
+
+    content = request.json
+
+    try:
+        check_use_flask_devserver = args.use_flask_devserver
+    except NameError:
+        zmq_client_socket = app.config['zmq_client_socket']
+        print(" * Sending msg to zmq_server...")
+        zmq_client_socket.send_json(content)        
+        json_msg = zmq_client_socket.recv_json()
+        return_code = json_msg["return_code"]
+        json_content = json_msg["updated_content"]
+    else:
+        start_request_timer = default_timeit_timer()
+        updated_content, return_code = post_request_handling(content, start_request_timer)
+        json_content = updated_content
+        if (return_code == 201):
+            pull_queue = app.config['pull_queue']
+            pull_queue.put((updated_content, start_request_timer,))
+
+    return jsonify(json_content), return_code
+        
 @app.route("/api/v0/classify/<classify_id>", methods = ['GET'])
 @app.route("/api/v0/classify/<classify_id>/", methods = ['GET'])
 def handle_get(classify_id):
@@ -238,11 +258,32 @@ def get_url_using_requests_lib(url_name, **kwargs):
         return response, retval_expect
 
 def flask_server_run(process_id):
-    print(" * Inside worker process for flask_server_run")
+    print(" * Inside worker process ID %d for flask_server_run" % (process_id,))
 
-    app.config['pull_queue'] = pull_queue    
+    app.config['pull_queue'] = pull_queue
     app.run(host='0.0.0.0', port=args.flask_port)
 
+def zmq_server_run(process_id):
+    print(" * Inside worker process ID %d for zmq_server_run" % (process_id,))
+
+    zmq_server_context = zmq.Context()
+    zmq_server_socket = zmq_server_context.socket(zmq.REP)
+    zmq_server_socket.bind("tcp://*:5555")
+
+    while True:
+        # Wait for next request from client
+        print(" * Waiting for next request from zmq client...")
+        request_json = zmq_server_socket.recv_json()
+        start_request_timer = default_timeit_timer()
+        content = request_json
+        print(" * Received request: %s" % (content,))
+        updated_content, return_code = post_request_handling(content, start_request_timer)
+        json_msg = {"updated_content": updated_content,
+                    "return_code": return_code}
+        zmq_server_socket.send_json(json_msg)
+        if (return_code == 201):
+            pull_queue.put((content, start_request_timer,))
+        
 def pull_url_to_file(process_id):
     """This is the worker thread function.
     It processes items in the queue one after
@@ -500,6 +541,8 @@ def parse_args(argv=None):
                         help='A path to JSON file to be written out with detection info')
     parser.add_argument('--run_with_flask', default=False, type=str2bool,
                         help='Run with Flask and support a minimal REST-ful API?')
+    parser.add_argument('--use_flask_devserver', default=True, type=str2bool,
+                        help='Use Flask dev web server?')
     parser.add_argument('--flask_port', default=11000, type=int,
                         help='Port to run web-service on')
     parser.add_argument('--flask_output_webserver', default="http://10.1.10.110:8080/openoutputs/", type=str,
@@ -517,6 +560,7 @@ def parse_args(argv=None):
     global args
     args = parser.parse_args(argv)
 
+    #print("args =", args)
     if args.output_web_json:
         args.output_coco_json = True
     
@@ -1581,7 +1625,7 @@ def print_maps(all_maps):
     print()
 
 
-
+    
 if __name__ == '__main__':
     
     signal.signal(signal.SIGINT, signal_handler)
@@ -1676,7 +1720,10 @@ if __name__ == '__main__':
             inference_queue = mpQueue()
             img_write_queue = mpQueue()
 
-            worker_process2 = Process(target=flask_server_run, args=(2,))
+            if (args.use_flask_devserver):
+                worker_process2 = Process(target=flask_server_run, args=(2,))
+            else:
+                worker_process2 = Process(target=zmq_server_run, args=(2,))
             worker_process3 = Process(target=pull_url_to_file, args=(3,))
             worker_process4 = Process(target=read_imgfile, args=(4,))
             worker_process5 = Process(target=write_imgfile, args=(5,))
@@ -1714,5 +1761,3 @@ if __name__ == '__main__':
             
         else:
             evaluate(net, dataset)
-
-
