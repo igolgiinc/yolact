@@ -719,6 +719,7 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
         bottom = []
         confidence = []
         labels = []
+
         for j in reversed(range(num_dets_to_consider)):
             x1, y1, x2, y2 = boxes[j, :]
             color = get_color(j)
@@ -1178,7 +1179,7 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
         
     end_inference_timer = default_timeit_timer()
     inference_time_ms = ((end_inference_timer - start_inference_timer) * 1000.0)
-    print(" * Inference time: %0.4f ms" % (inference_time_ms,))
+    print(" * Request ID:", request_id, " | Inference time: %0.4f ms" % (inference_time_ms,))
 
     if args.contours_json:
 
@@ -1201,7 +1202,9 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
         img_numpy = prep_display(preds, frame, None, None, undo_transform=False, contours_json_dict=contours_json, results_json_dict=results_json, \
                                  request_id=target_post_request_id)
         end_prep_display_timer = default_timeit_timer()
-
+        prep_display_time_ms = ((end_prep_display_timer - start_prep_display_timer) * 1000.0)
+        print(" * Request ID:", request_id, " | Prep. display time: %0.4f ms" % (prep_display_time_ms,))
+        
         contours_json["error_description"] = ""
 
         shared_contours_json_list[target_post_request_id] = contours_json
@@ -1231,14 +1234,16 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
             if args.run_with_flask:
                 with shared_status_array[target_post_request_id].get_lock():
                     shared_status_array[target_post_request_id].value = FINISHED_STATUS
-                print(" * Set status to finished for id: ", target_post_request_id)
+                if args.flask_debug_mode:
+                    print(" * Set status to finished for id: ", target_post_request_id)
 
             if args.flask_debug_mode:
                 for key in range(0, args.flask_max_parallel_frames):
                     print(" * shared_status_array (after handle_post update) i=", key, ", val: ", shared_status_array[key].value)
 
-            request_handling_time_ms = ((end_prep_display_timer - start_request_timer) * 1000.0)
-            print(" * Request handling time: %0.4f ms" % (request_handling_time_ms,))
+            end_request_timer = default_timeit_timer()
+            request_handling_time_ms = ((end_request_timer - start_request_timer) * 1000.0)
+            print(" * Set status to finished for id: ", target_post_request_id, " | Request handling time: %0.4f ms" % (request_handling_time_ms,))
 
             
 def evalimage(net:Yolact, path:str, save_path:str=None):    
