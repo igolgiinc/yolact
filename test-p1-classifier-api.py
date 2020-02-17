@@ -8,9 +8,10 @@ post_json = {
     #"input": "http://10.1.10.110:8080/openoutputs/image1000000_65.png",
     #"input": "http://10.1.10.110:8080/openoutputs/image1000000_1.png",
     #"input": "http://10.1.10.110:8080/openoutputs/classifier_input/images/test_0215.jpg",
-    "input": "http://10.1.10.190/classify/image2000000_1.png",
+    "input": "http://10.1.10.190/classify/image6000000_2.png",
     "type": "stream",
-    "output_dir": "/mnt/bigdrive1/cnn/outputs/",
+    #"output_dir": "/mnt/bigdrive1/cnn/outputs/",
+    "output_dir": "/tmp/",
     "config": {"detection_threshold": 0.50},
     "mode": "image",
 }
@@ -30,7 +31,7 @@ def send_post_request(input_img=None):
     while (True):
         retval = 0
         try:
-            response = requests.post('http://10.1.10.110:12000/api/v0/classify/', headers=custom_headers, data=post_json_dumps)
+            response = requests.post('http://10.1.10.110:10001/api/v0/classify/', headers=custom_headers, data=post_json_dumps)
         except requests.exceptions.ConnectionError:
             print("HTTP to webserver failed with ConnectionError.")
             retval = -1
@@ -67,7 +68,7 @@ def send_post_request(input_img=None):
             
 def send_get_request(response_id):
     
-    get_url = 'http://10.1.10.110:12000/api/v0/classify/%d/' % (response_id,)
+    get_url = 'http://10.1.10.110:10001/api/v0/classify/%d/' % (response_id,)
 
     while (True):
         retval = 0
@@ -111,10 +112,10 @@ if __name__ == "__main__":
     #response_id = send_post_request()
     #response_id_list.append(response_id)
 
-    for i in range(1,20):
+    for i in range(1,2):
         print(" * i = ", i)
         #response_id = send_post_request("test_%04d" % i + ".jpg")
-        response_id = send_post_request("image1000000_%d" % i + ".png")
+        response_id = send_post_request("image6000000_%d" % i + ".png")
         response_id_list.append(response_id)
         #time.sleep(1.0) # 50ms sleep
         if (i % 30) == 0:
@@ -123,7 +124,8 @@ if __name__ == "__main__":
                     send_get_request(response_id)
             response_id_list = []
 
-    #time.sleep(1.0)
+    time.sleep(1.0)
     for response_id in response_id_list:
         if response_id >= 0:
             send_get_request(response_id)
+    
