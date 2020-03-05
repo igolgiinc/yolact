@@ -647,7 +647,7 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
     #    print(i, masks[i].nonzero().size())
     #print(masks[6].nonzero().size())
     # print(" * args.contours_json: ", args.contours_json)
-    if args.contours_json:
+    if args.contours_json and results_json_dict:
         results_json_dict["num_labels_detected"] = num_dets_to_consider
         if args.flask_debug_mode:
             print(" * results_json: ", results_json_dict)
@@ -755,12 +755,13 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
                 cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
                 cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
 
-        results_json_dict["left"] = left
-        results_json_dict["top"] = top
-        results_json_dict["right"] = right
-        results_json_dict["bottom"] = bottom
-        results_json_dict["confidence"] = confidence
-        results_json_dict["labels"] = labels
+        if results_json_dict:
+            results_json_dict["left"] = left
+            results_json_dict["top"] = top
+            results_json_dict["right"] = right
+            results_json_dict["bottom"] = bottom
+            results_json_dict["confidence"] = confidence
+            results_json_dict["labels"] = labels
         
     # Code to get contours of the pixel masks
     if args.contours_json:
@@ -804,8 +805,9 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
             results_num_contour_points.append(len(mask_contours[j]))
             results_mask_contours.append(mask_contours[j])
 
-        results_json_dict["num_contour_points"] = results_num_contour_points
-        results_json_dict["contours"] = results_mask_contours
+        if results_json_dict:
+            results_json_dict["num_contour_points"] = results_num_contour_points
+            results_json_dict["contours"] = results_mask_contours
         
     return img_numpy
 
