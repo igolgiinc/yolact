@@ -71,9 +71,9 @@ def post_request_handling(content, start_request_timer):
 
     with shared_status_array[target_post_request_id].get_lock():
         cur_status = shared_status_array[target_post_request_id].value
-
-    print(" * target_post_request_id (POST): ", target_post_request_id)
+    
     if args.flask_debug_mode:
+        print(" * target_post_request_id (POST): ", target_post_request_id)
         for key in range(0, args.flask_max_parallel_frames):
             print(" * shared_status_array (handle_post) i=", key, ", val: ", shared_status_array[key].value)
 
@@ -103,7 +103,7 @@ def post_request_handling(content, start_request_timer):
 
         content["id"] = target_post_request_id
         contours_json = shared_contours_json_list[target_post_request_id]
-        print(" * Set status to running, target_post_request_id: ", target_post_request_id, ", cur_status: ", cur_status)
+        print(" * Request ID: ", target_post_request_id, " | POST | Set status to running (%d)" % (cur_status,))
 
         # Reinitialize
         contours_json["input"] = ""
@@ -180,8 +180,8 @@ def get_request_handling(classify_id_int):
         response_json["id"] = classify_id_int
 
     else:
-        response_json = {"error" : "Invalid GET request, ID: %s is out of the range supported (min=0, max=%d) supported" % (classify_id, args.flask_max_parallel_frames-1,), \
-                         "id": classify_id_int}
+        response_json = {"error" : "Invalid GET request, ID: %d is out of the range supported (min=0, max=%d) supported" %\
+                         (classify_id_int, args.flask_max_parallel_frames-1,), "id": classify_id_int}
 
     return response_json
 
@@ -223,7 +223,7 @@ def handle_get(classify_id):
         response_json = {"error" : "Invalid GET request, ID: %s is not an integer" % (classify_id,)}
     else:
 
-        print(' * HTTP GET for classify_id: ', classify_id_int)
+        print(' * Request ID: ', classify_id_int, ' | HTTP GET')
 
         try:
             check_use_flask_devserver = args.use_flask_devserver
@@ -344,7 +344,7 @@ def pull_url_to_file(process_id):
             else:
                 with shared_status_array[target_post_request_id].get_lock():
                     shared_status_array[target_post_request_id].value = FINISHED_STATUS
-                print(" * Set status to finished for id: ", target_post_request_id)
+                print(" * Request ID: ", target_post_request_id, " | Set status to finished")
                 contours_json["error_description"] = "Invalid input JSON, missing 'input' key"
                 shared_contours_json_list[target_post_request_id] = contours_json                
                 continue
@@ -368,10 +368,10 @@ def pull_url_to_file(process_id):
                     continue
                     '''
                     
-            local_img_path, url_valid_flag = get_local_filepath(input_path)
+            local_img_path, url_valid_flag = get_local_filepath(target_post_request_id, input_path)
             end_pull_timer = default_timeit_timer()
             url_handling_time_ms = ((end_pull_timer - start_pull_timer) * 1000.0)
-            print(" * URL handling time: %0.4f ms" % (url_handling_time_ms,))
+            print(" * Request ID: ", target_post_request_id, " | URL handling time: %0.4f ms" % (url_handling_time_ms,))
             
             if url_valid_flag:
                 if args.flask_debug_mode:
@@ -385,7 +385,7 @@ def pull_url_to_file(process_id):
                 if args.run_with_flask:
                     with shared_status_array[target_post_request_id].get_lock():
                         shared_status_array[target_post_request_id].value = FINISHED_STATUS
-                    print(" * Set status to finished for id: ", target_post_request_id)
+                    print(" * Request ID: ", target_post_request_id, " | Set status to finished")
                     contours_json["error_description"] = "Invalid input URL %s" % (input_path,)
                     shared_contours_json_list[target_post_request_id] = contours_json
                     
@@ -417,8 +417,8 @@ def read_imgfile(process_id):
             #print(" * cv2_img_obj: %s" % (str(cv2_img_obj),))
             end_file_read_timer = default_timeit_timer()
             file_read_time_ms = ((end_file_read_timer - start_file_read_timer) * 1000.0)
-            print(" * File read time: %0.4f ms" % (file_read_time_ms,))
-
+            print(" * Request ID: ", target_post_request_id, " | File read time: %0.4f ms" % (file_read_time_ms,))
+            
             if cv2_img_obj is None:
 
                 print(" * OpenCV could not read input image file at: %s. Bad image file?" % (local_path,))
@@ -429,7 +429,7 @@ def read_imgfile(process_id):
                 if args.run_with_flask:
                     with shared_status_array[target_post_request_id].get_lock():
                         shared_status_array[target_post_request_id].value = FINISHED_STATUS
-                    print(" * Set status to finished for id: ", target_post_request_id)
+                    print(" * Request ID: ", target_post_request_id, " | Set status to finished")
                     contours_json["error_description"] = "Invalid input file %s" % (local_path,)
                     shared_contours_json_list[target_post_request_id] = contours_json
                     
@@ -472,16 +472,16 @@ def write_imgfile(process_id):
             if args.run_with_flask:
                 with shared_status_array[target_post_request_id].get_lock():
                     shared_status_array[target_post_request_id].value = FINISHED_STATUS
-                print(" * Set status to finished for id: ", target_post_request_id)
-
+                print(" * Request ID: ", target_post_request_id, " | Set status to finished")
+                      
             if args.flask_debug_mode:
                 for key in range(0, args.flask_max_parallel_frames):
                     print(" * shared_status_array (after handle_post update) i=", key, ", val: ", shared_status_array[key].value)
 
             out_imgwrite_time_ms = ((end_outputimg_timer - start_outputimg_timer) * 1000.0)
             request_handling_time_ms = ((end_outputimg_timer - start_request_timer) * 1000.0)
-            print(" * Output img writeout time: %0.4f ms" % (out_imgwrite_time_ms,))
-            print(" * Request handling time: %0.4f ms" % (request_handling_time_ms,))
+            print(" * Request ID: ", target_post_request_id, " | Output img writeout time: %0.4f ms" % (out_imgwrite_time_ms,))
+            print(" * Request ID: ", target_post_request_id, " | Request handling time: %0.4f ms" % (request_handling_time_ms,))
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -659,7 +659,7 @@ def prep_display(dets_out, img, h, w, undo_transform=True, class_color=False, ma
             if args.run_with_flask:
                 with shared_status_array[target_post_request_id].get_lock():
                     shared_status_array[target_post_request_id].value = FINISHED_STATUS
-                print(" * Set status to finished for id: ", target_post_request_id)
+                print(" * Request ID: ", target_post_request_id, " | Set status to finished")
 
         # No detections found so just output the original image
         return (img_gpu * 255).byte().cpu().numpy()
@@ -1136,7 +1136,7 @@ def badhash(x):
     x =  ((x >> 16) ^ x) & 0xFFFFFFFF
     return x
 
-def get_local_filepath(imgpath:str):
+def get_local_filepath(request_id:int, imgpath:str):
 
     local_filepath = None
     pulled_file = False
@@ -1148,20 +1148,34 @@ def get_local_filepath(imgpath:str):
         split_request_json = imgpath.rsplit("/", 1)
         #print(split_request_json)
         local_filepath = "/root/p1inputs/" + split_request_json[1]
-        print(" * About to pull from %s into %s" % (imgpath, local_filepath,))
+        print(" * Request ID: ", request_id, " | About to pull from %s into %s" % (imgpath, local_filepath,))
+
+        start_http_pull_timer = default_timeit_timer()
         response, retval = get_url_using_requests_lib(imgpath, stream=True)
+        end_http_pull_timer = default_timeit_timer()
+        http_url_handling_time_ms = ((end_http_pull_timer - start_http_pull_timer) * 1000.0)
+        print(" * Request ID: ", request_id, " | HTTP PULL handling time: %0.4f ms" % (http_url_handling_time_ms,))
+        
         if response is not None:
             # print(" * http response status code: %d" % (response.status_code,))
             if (response.status_code == 200):
+                
+                start_inputfilewrite_timer = default_timeit_timer()
+
                 try:
                     with open(local_filepath, 'wb') as fd:
                         fd.write(response.content)
                 except IOError:
-                    print("Could not write to file: " + str(local_filepath))
+                    print("IOError | Could not write input URL: " + imgpath + " to file: " + str(local_filepath))
                 else:
                     if args.flask_debug_mode:
                         print(" * Pulled from URL %s and wrote content to file %s of length %s" % (imgpath, local_filepath, response.headers.get('content-length')))
                     pulled_file = True
+                    
+                end_inputfilewrite_timer = default_timeit_timer()
+                http_inputfilewrite_time_ms = ((end_inputfilewrite_timer - start_inputfilewrite_timer) * 1000.0)
+                print(" * Request ID: ", request_id, " | Input filewrite handling time: %0.4f ms" % (http_inputfilewrite_time_ms,))
+                
             else:
                 print(" * Did not write content from %s to file %s as response status code is not 200/HTTP OK" % (imgpath, local_filepath,))
         else:
@@ -1170,19 +1184,34 @@ def get_local_filepath(imgpath:str):
     return local_filepath, pulled_file
 
 def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=None, start_request_timer=None, start_inference_timer=None, request_id=None):
-    
+
+    start_inference1_timer = default_timeit_timer()
     try:
         frame = torch.from_numpy(cv2_img_obj).cuda().float()
     except TypeError:
         print(" * TypeError reading %s" % (path,))
         local_img_cannot_be_read = True
     else:
+        end_inference1_timer = default_timeit_timer()
+        inference1_time_ms = ((end_inference1_timer - start_inference1_timer) * 1000.0)
+
+        start_inference2_timer = default_timeit_timer()
         batch = FastBaseTransform()(frame.unsqueeze(0))
+        end_inference2_timer = default_timeit_timer()
+        inference2_time_ms = ((end_inference2_timer - start_inference2_timer) * 1000.0)
+
+        start_inference3_timer = default_timeit_timer()
         preds = net(batch)
+        end_inference3_timer = default_timeit_timer()
+        inference3_time_ms = ((end_inference3_timer - start_inference3_timer) * 1000.0)
         
     end_inference_timer = default_timeit_timer()
     inference_time_ms = ((end_inference_timer - start_inference_timer) * 1000.0)
-    print(" * Request ID:", request_id, " | Inference time: %0.4f ms" % (inference_time_ms,))
+
+    print(" * Request ID: ", request_id, " | Inference (part1) time: %0.4f ms" % (inference1_time_ms,))
+    print(" * Request ID: ", request_id, " | Inference (part2) time: %0.4f ms" % (inference2_time_ms,))
+    print(" * Request ID: ", request_id, " | Inference (part3) time: %0.4f ms" % (inference3_time_ms,))    
+    print(" * Request ID: ", request_id, " | Inference time: %0.4f ms" % (inference_time_ms,))
 
     if args.contours_json:
 
@@ -1206,7 +1235,7 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
                                  request_id=target_post_request_id)
         end_prep_display_timer = default_timeit_timer()
         prep_display_time_ms = ((end_prep_display_timer - start_prep_display_timer) * 1000.0)
-        print(" * Request ID:", request_id, " | Prep. display time: %0.4f ms" % (prep_display_time_ms,))
+        print(" * Request ID: ", request_id, " | Prep. display time: %0.4f ms" % (prep_display_time_ms,))
         
         contours_json["error_description"] = ""
 
@@ -1238,7 +1267,7 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
                 with shared_status_array[target_post_request_id].get_lock():
                     shared_status_array[target_post_request_id].value = FINISHED_STATUS
                 if args.flask_debug_mode:
-                    print(" * Set status to finished for id: ", target_post_request_id)
+                    print(" * Request ID: ", target_post_request_id, " | Set status to finished")
 
             if args.flask_debug_mode:
                 for key in range(0, args.flask_max_parallel_frames):
@@ -1246,7 +1275,7 @@ def eval_cv2_image(net:Yolact, cv2_img_obj, save_path:str=None, original_path=No
 
             end_request_timer = default_timeit_timer()
             request_handling_time_ms = ((end_request_timer - start_request_timer) * 1000.0)
-            print(" * Set status to finished for id: ", target_post_request_id, " | Request handling time: %0.4f ms" % (request_handling_time_ms,))
+            print(" * Request ID: ", target_post_request_id, " | Set status to finished with request handling time: %0.4f ms" % (request_handling_time_ms,))
 
             
 def evalimage(net:Yolact, path:str, save_path:str=None):    
