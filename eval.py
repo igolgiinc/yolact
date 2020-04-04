@@ -583,6 +583,8 @@ def parse_args(argv=None):
                         help='Max. number of parallel frames/requests handled/buffered per second')
     parser.add_argument('--flask_request_timeout_ms', default=200.0, type=float,
                         help='Timeout in ms before existing results are over-written for a prior POST request that has not yet seen the corresponding GET')
+    parser.add_argument('--http_png_folder', default="/root/p1inputs", type=str,
+                        help='A path to where the input PNG images fetched over HTTP should be saved')
 
     parser.set_defaults(no_bar=False, display=False, resume=False, output_coco_json=False, output_web_json=False, shuffle=False,
                         benchmark=False, no_sort=False, no_hash=False, mask_proto_debug=False, crop=True, detect=False)
@@ -1147,7 +1149,7 @@ def get_local_filepath(request_id:int, imgpath:str):
     else:
         split_request_json = imgpath.rsplit("/", 1)
         #print(split_request_json)
-        local_filepath = "/root/p1inputs/" + split_request_json[1]
+        local_filepath = "%s/" % (args.http_png_folder,) + split_request_json[1]
         print(" * Request ID: ", request_id, " | About to pull from %s into %s" % (imgpath, local_filepath,))
 
         start_http_pull_timer = default_timeit_timer()
