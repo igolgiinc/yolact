@@ -89,12 +89,12 @@ def post_request_handling(content, start_request_timer):
 
                 with shared_readtimestamp_array[target_post_request_id].get_lock():
                     req_readtimestamp = shared_readtimestamp_array[target_post_request_id].value
-
+                    
                 time_passed_for_req_ms = ((start_request_timer - req_readtimestamp) * 1000.0)
                 print(" * req handling time: %0.4f ms" % (time_passed_for_req_ms,))
 
                 if (time_passed_for_req_ms <= args.flask_request_timeout_ms):
-                    print(" * This entry has not been read yet by GET. Cannot over-write this entry yet")
+                    print(" * Request ID: ", target_post_request_id, " | This entry has not been read yet by GET. Cannot over-write this entry yet")
                     content["id"] = target_post_request_id
                     content["error_description"] = "All available slots busy. Try again in a bit."
                     return content, 503
@@ -138,7 +138,7 @@ def post_request_handling(content, start_request_timer):
 
     else:
 
-        print(" * cur_status (POST): ", cur_status)
+        print(" * Request ID: ", target_post_request_id, " | cur_status (POST): RUNNING")
         content["id"] = target_post_request_id
         content["error_description"] = "All available slots busy. Try again in a bit."
         return content, 503
@@ -367,7 +367,7 @@ def pull_url_to_file(process_id):
                     shared_contours_json_list[target_post_request_id] = contours_json
                     continue
                     '''
-                    
+
             local_img_path, url_valid_flag = get_local_filepath(target_post_request_id, input_path)
             end_pull_timer = default_timeit_timer()
             url_handling_time_ms = ((end_pull_timer - start_pull_timer) * 1000.0)
@@ -585,6 +585,8 @@ def parse_args(argv=None):
                         help='Timeout in ms before existing results are over-written for a prior POST request that has not yet seen the corresponding GET')
     parser.add_argument('--http_png_folder', default="/root/p1inputs", type=str,
                         help='A path to where the input PNG images fetched over HTTP should be saved')
+    parser.add_argument('--local_detector_mode', default=False, type=bool,
+                        help='HTTP requests coming from local machine and images already available in --http_png_folder')
 
     parser.set_defaults(no_bar=False, display=False, resume=False, output_coco_json=False, output_web_json=False, shuffle=False,
                         benchmark=False, no_sort=False, no_hash=False, mask_proto_debug=False, crop=True, detect=False)
@@ -1150,6 +1152,12 @@ def get_local_filepath(request_id:int, imgpath:str):
         split_request_json = imgpath.rsplit("/", 1)
         #print(split_request_json)
         local_filepath = "%s/" % (args.http_png_folder,) + split_request_json[1]
+
+        if args.local_detector_mode:
+            print(" * Request ID: ", request_id, " | Already pulled from %s into %s" % (imgpath, local_filepath,))
+            pulled_file = True
+            return local_filepath, pulled_file
+        
         print(" * Request ID: ", request_id, " | About to pull from %s into %s" % (imgpath, local_filepath,))
 
         start_http_pull_timer = default_timeit_timer()
