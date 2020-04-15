@@ -8,10 +8,12 @@ post_json = {
     #"input": "http://10.1.10.110:8080/openoutputs/image1000000_65.png",
     #"input": "http://10.1.10.110:8080/openoutputs/image1000000_1.png",
     #"input": "http://10.1.10.110:8080/openoutputs/classifier_input/images/test_0215.jpg",
-    "input": "http://10.1.10.190/classify/image1000000_10.png",
+    #"input": "http://10.1.10.99/classify/image3000000_160.png",
+    #"input": "http://10.1.10.110:9090/openoutputs/obvious-van-1-source-008.png",
+    "input": "http://10.1.10.163/classify/obvious-van-1-source-008.png",
     "type": "stream",
-    #"output_dir": "/mnt/bigdrive1/cnn/outputs/",
-    "output_dir": "/tmp/",
+    "output_dir": "/results/",
+    #"output_dir": "/tmp/",
     "config": {"detection_threshold": 0.50},
     "mode": "image",
 }
@@ -21,7 +23,7 @@ custom_headers = {'content-type': 'application/json'}
 def send_post_request(input_img=None):
     if input_img:
         #post_json["input"] = "http://10.1.10.110:8080/openoutputs/classifier_input/images/" + input_img
-        post_json["input"] = "http://10.1.10.190/classify/" + input_img
+        post_json["input"] = "http://10.1.10.163/classify/" + input_img
         
     pprint.pprint(post_json)
     post_json_dumps = json.dumps(post_json)
@@ -31,7 +33,7 @@ def send_post_request(input_img=None):
     while (True):
         retval = 0
         try:
-            response = requests.post('http://10.1.10.110:11000/api/v0/classify/', headers=custom_headers, data=post_json_dumps)
+            response = requests.post('http://10.1.10.163:10000/api/v0/classify/', headers=custom_headers, data=post_json_dumps)
         except requests.exceptions.ConnectionError:
             print("HTTP to webserver failed with ConnectionError.")
             retval = -1
@@ -68,7 +70,7 @@ def send_post_request(input_img=None):
             
 def send_get_request(response_id):
     
-    get_url = 'http://10.1.10.110:11000/api/v0/classify/%d/' % (response_id,)
+    get_url = 'http://10.1.10.163:10001/api/v0/classify/%d/' % (response_id,)
 
     while (True):
         retval = 0
@@ -109,9 +111,10 @@ if __name__ == "__main__":
     response_id_list = []
 
     print(" About to send post request")
-    #response_id = send_post_request()
-    #response_id_list.append(response_id)
+    response_id = send_post_request()
+    response_id_list.append(response_id)
 
+    '''
     for i in range(10,11):
         print(" * i = ", i)
         #response_id = send_post_request("test_%04d" % i + ".jpg")
@@ -123,7 +126,8 @@ if __name__ == "__main__":
                 if response_id >= 0:
                     send_get_request(response_id)
             response_id_list = []
-
+    '''
+    
     time.sleep(1.0)
     for response_id in response_id_list:
         if response_id >= 0:
