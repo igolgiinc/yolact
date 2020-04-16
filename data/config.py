@@ -172,6 +172,20 @@ pascal_sbd_dataset = dataset_base.copy({
     'class_names': PASCAL_CLASSES,
 })
 
+aerial_car_dataset = dataset_base.copy({
+    'name': 'Igolgi Aerial Cars Synthetic Dataset',
+
+    'train_images': './data/Aerial_Cars/Synthetic_v_2.1/synthetic_train/images',
+    'train_info':   './data/Aerial_Cars/Synthetic_v_2.1/synthetic_train/synthetic_train.json',
+
+    'valid_images': './data/Aerial_Cars/Synthetic_v_2.1/synthetic_val/images',
+    'valid_info':   './data/Aerial_Cars/Synthetic_v_2.1/synthetic_val/synthetic_val.json',
+
+    'has_gt': True,
+    'class_names': ('Car','18 Wheeler',),
+    'label_map': {1: 1, 2: 2}
+
+})
 
 
 
@@ -803,6 +817,56 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
         'preapply_sqrt': False,
         'use_square_anchors': False,
     }),
+})
+
+yolact_aerial_config = coco_base_config.copy({
+    'name': 'yolact_aerial',
+
+    # Dataset stuff
+    'dataset': aerial_car_dataset,
+    'num_classes': len(aerial_car_dataset.class_names) + 1,
+
+    # Image Size
+    'max_size': 550,
+    
+    # Training params
+    'lr_steps': (280000, 600000, 700000, 750000),
+    'max_iter': 800000,
+    
+    # Backbone Settings
+    'backbone': resnet101_backbone.copy({
+        'selected_layers': list(range(1, 4)),
+        'use_pixel_scales': True,
+        'preapply_sqrt': False,
+        'use_square_anchors': True, # This is for backward compatability with a bug
+
+        'pred_aspect_ratios': [ [[1, 1/2, 2]] ]*5,
+        'pred_scales': [[24], [48], [96], [192], [384]],
+    }),
+
+    # FPN Settings
+    'fpn': fpn_base.copy({
+        'use_conv_downsample': True,
+        'num_downsample': 2,
+    }),
+
+    # Mask Settings
+    'mask_type': mask_type.lincomb,
+    'mask_alpha': 6.125,
+    'mask_proto_src': 0,
+    'mask_proto_net': [(256, 3, {'padding': 1})] * 3 + [(None, -2, {}), (256, 3, {'padding': 1})] + [(32, 1, {})],
+    'mask_proto_normalize_emulate_roi_pooling': True,
+
+    # Other stuff
+    'share_prediction_module': True,
+    'extra_head_net': [(256, 3, {'padding': 1})],
+
+    'positive_iou_threshold': 0.5,
+    'negative_iou_threshold': 0.4,
+
+    'crowd_iou_threshold': 0.7,
+
+    'use_semantic_segmentation_loss': True,
 })
 
 
