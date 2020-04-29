@@ -228,6 +228,20 @@ coco2017_combined2_dataset = dataset_base.copy({
     'class_names': ('person', 'car', 'bus', 'truck')
 })
 
+arl_semandex_dataset = dataset_base.copy({
+    'name': 'ARL and Semandex dataset',
+
+    'train_images': '/mnt/bigdrive1/cnn/van_data/images',
+    'train_info':   '/mnt/bigdrive1/cnn/van_data/output/test1-coco-train.json',
+
+    'valid_images': '/mnt/bigdrive1/cnn/van_data/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/van_data/output/test1-coco-valid.json',
+
+    'has_gt': True,
+    'class_names': ('car','truck', 'van'),
+    'label_map': {1: 1, 2: 2, 3: 3}
+
+})
 
 # ----------------------- TRANSFORMS ----------------------- #
 
@@ -904,6 +918,32 @@ yolact_reduced2_classonly_config = yolact_base_config.copy({
     # Dataset stuff
     'dataset': coco2017_reduced2_dataset,
     'num_classes': len(coco2017_reduced2_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    'lr_steps': (70000, 150000, 175000, 187500),
+    'max_iter': 200000,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    # 'use_semantic_segmentation_loss': False,
+    # 'semantic_segmentation_alpha': 0,
+    'class_layer_only': True,
+    'print_detach': True,
+    'print_loss_adj': True,
+
+})
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans
+yolact_vehicular_classonly_config = yolact_base_config.copy({
+
+    'name': 'yolact_vehicular_classonly',
+
+    # Dataset stuff
+    'dataset': arl_semandex_dataset,
+    'num_classes': len(arl_semandex_dataset.class_names) + 1,
 
     # Training params
     'lr': 1e-3,
