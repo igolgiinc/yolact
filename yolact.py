@@ -164,6 +164,14 @@ class PredictionModule(nn.Module):
 
         bbox_x = src.bbox_extra(x)
         conf_x = src.conf_extra(x)
+
+        # Added for training so that the gradients don't go past the classification layer
+        if cfg.class_layer_only:
+            if cfg.print_detach:
+                print("= Detaching conf_x to train only the classification layer")
+                cfg.print_detach = False
+            conf_x = conf_x.detach()
+            
         mask_x = src.mask_extra(x)
 
         bbox = src.bbox_layer(bbox_x).permute(0, 2, 3, 1).contiguous().view(x.size(0), -1, 4)
@@ -487,7 +495,11 @@ class Yolact(nn.Module):
             if key.startswith('fpn.downsample_layers.'):
                 if cfg.fpn is not None and int(key.split('.')[2]) >= cfg.fpn.num_downsample:
                     del state_dict[key]
-        self.load_state_dict(state_dict)
+            try:
+                self.load_state_dict(state_dict)
+            except RuntimeError as e:
+                print('Ignoring "' + str(e) + '"')
+            #self.load_state_dict(state_dict)
 
     def init_weights(self, backbone_path):
         """ Initialize weights for training. """
@@ -568,13 +580,23 @@ class Yolact(nn.Module):
         cfg._tmp_img_w = img_w
         
         with timer.env('backbone'):
-            outs = self.backbone(x)
-
+            if cfg.class_layer_only:
+                with torch.no_grad():
+                    outs = self.backbone(x)
+            else:
+                outs = self.backbone(x)
+                
         if cfg.fpn is not None:
             with timer.env('fpn'):
-                # Use backbone.selected_layers because we overwrote self.selected_layers
-                outs = [outs[i] for i in cfg.backbone.selected_layers]
-                outs = self.fpn(outs)
+                if cfg.class_layer_only:
+                    with torch.no_grad():
+                        # Use backbone.selected_layers because we overwrote self.selected_layers
+                        outs = [outs[i] for i in cfg.backbone.selected_layers]
+                        outs = self.fpn(outs)
+                else:
+                    # Use backbone.selected_layers because we overwrote self.selected_layers
+                    outs = [outs[i] for i in cfg.backbone.selected_layers]
+                    outs = self.fpn(outs)
 
         proto_out = None
         if cfg.mask_type == mask_type.lincomb and cfg.eval_mask_branch:

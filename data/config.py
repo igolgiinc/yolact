@@ -155,6 +155,19 @@ coco2017_testdev_dataset = dataset_base.copy({
     'label_map': COCO_LABEL_MAP
 })
 
+# Using only COCO annotation data for cars, trucks, buses and persons
+# persons, cars, buses, trucks have category IDs the same as in COCO-2017 train/val
+# data for training and validation is JUST the info. from COCO-2017 train/val
+coco2017_reduced2_dataset = dataset_base.copy({
+    'name': 'COCO 2017 reduced2 dataset',
+
+    # Training images and annotations
+    'train_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/reduced_instances_train2017-2.json',
+    'valid_info':   '/mnt/bigdrive1/cnn/yolact/data/coco/annotations/reduced_instances_val2017-2.json',
+
+    'label_map': COCO_LABEL_MAP
+})
+
 PASCAL_CLASSES = ("aeroplane", "bicycle", "bird", "boat", "bottle",
                   "bus", "car", "cat", "chair", "cow", "diningtable",
                   "dog", "horse", "motorbike", "person", "pottedplant",
@@ -187,6 +200,20 @@ aerial_car_dataset = dataset_base.copy({
 
 })
 
+custom_vehicular_dataset = dataset_base.copy({
+    'name': 'Custom vehicular dataset',
+
+    'train_images': '/mnt/bigdrive1/cnn/van_data/images',
+    'train_info':   '/mnt/bigdrive1/cnn/van_data/output/test1-coco-train.json',
+
+    'valid_images': '/mnt/bigdrive1/cnn/van_data/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/van_data/output/test1-coco-valid.json',
+
+    'has_gt': True,
+    'class_names': ('car','truck', 'van'),
+    'label_map': {1: 1, 2: 2, 3: 3}
+
+})
 
 
 
@@ -867,6 +894,88 @@ yolact_aerial_config = coco_base_config.copy({
     'crowd_iou_threshold': 0.7,
 
     'use_semantic_segmentation_loss': True,
+})
+
+# Config for reduced COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
+yolact_reduced2_config = yolact_base_config.copy({
+
+    'name': 'yolact_reduced2',
+
+    # Dataset stuff
+    'dataset': coco2017_reduced2_dataset,
+    'num_classes': len(coco2017_reduced2_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-4,
+    'lr_steps': (70000, 150000, 175000, 187500),
+    'max_iter': 200000,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    # 'bbox_alpha': 0.0,
+    # 'mask_alpha': 0.0,
+    # 'use_semantic_segmentation_loss': False,
+    # 'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'print_detach': True,
+    'print_loss_adj': True,
+    
+})
+
+# Config for reduced COCO dataset that contains all 80 categories but annotations only for cars, trucks, buses and persons
+yolact_reduced2_classonly_config = yolact_base_config.copy({
+
+    'name': 'yolact_reduced2_classonly',
+
+    # Dataset stuff
+    'dataset': coco2017_reduced2_dataset,
+    'num_classes': len(coco2017_reduced2_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    'lr_steps': (70000, 150000, 175000, 187500),
+    'max_iter': 200000,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    # 'use_semantic_segmentation_loss': False,
+    # 'semantic_segmentation_alpha': 0,
+    'class_layer_only': True,
+    'print_detach': True,
+    'print_loss_adj': True,
+
+})
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans
+yolact_vehicular_classonly_config = yolact_base_config.copy({
+
+    'name': 'yolact_vehicular_classonly',
+
+    # Dataset stuff
+    'dataset': custom_vehicular_dataset,
+    'num_classes': len(custom_vehicular_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (70000, 150000, 175000, 187500),
+    #'max_iter': 200000,
+    'lr_steps': (280, 600, 700, 750),
+    'max_iter': 900,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': True,
+    'print_detach': True,
+    'print_loss_adj': True,
+
 })
 
 

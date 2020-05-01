@@ -242,6 +242,9 @@ def train():
 
     epoch_size = len(dataset) // args.batch_size
     num_epochs = math.ceil(cfg.max_iter / epoch_size)
+
+    print("= EPOCH SIZE (in iterations): ", epoch_size, " | len(dataset): ", len(dataset), " | batch_size: ", args.batch_size)
+    print("= Num. epochs: ", num_epochs, " | max_iter: ", cfg.max_iter)
     
     # Which learning rate adjustment step are we on? lr' = lr * gamma ^ step_index
     step_index = 0
@@ -307,7 +310,16 @@ def train():
                 losses = net(datum)
                 
                 losses = { k: (v).mean() for k,v in losses.items() } # Mean here because Dataparallel
-                loss = sum([losses[k] for k in losses])
+                if cfg.class_layer_only:
+                    if cfg.print_loss_adj:
+                        print("= Train class layer only, not propagating box, mask and segmentation losses further")
+                        cfg.print_loss_adj = False
+                    loss = sum([losses[k] for k in losses if k not in ['M','B','S']])
+                else:
+                    if cfg.print_loss_adj:
+                        print("= Train all layers, propagating box, mask and segmentation losses further")
+                        cfg.print_loss_adj = False
+                    loss = sum([losses[k] for k in losses])
                 
                 # no_inf_mean removes some components from the loss, so make sure to backward through all of it
                 # all_loss = sum([v.mean() for v in losses.values()])
@@ -458,12 +470,14 @@ def compute_validation_loss(net, data_loader, criterion):
         # Don't switch to eval mode because we want to get losses
         iterations = 0
         for datum in data_loader:
+            '''
             images, targets, masks, num_crowds = prepare_data(datum)
             out = net(images)
 
             wrapper = ScatterWrapper(targets, masks, num_crowds)
             _losses = criterion(out, wrapper, wrapper.make_mask())
-            
+            '''
+            _losses = net(datum)
             for k, v in _losses.items():
                 v = v.mean().item()
                 if k in losses:
