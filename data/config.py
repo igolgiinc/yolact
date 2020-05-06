@@ -210,8 +210,8 @@ custom_vehicular_dataset = dataset_base.copy({
     'valid_info':   '/mnt/bigdrive1/cnn/van_data/output/test1-coco-valid.json',
 
     'has_gt': True,
-    'class_names': ('car','truck', 'van'),
-    'label_map': {1: 1, 2: 2, 3: 3}
+    'class_names': ('car','truck', 'van', 'SUV'),
+    'label_map': {1: 1, 2: 2, 3: 3, 4: 4}
 
 })
 
@@ -963,8 +963,8 @@ yolact_vehicular_classonly_config = yolact_base_config.copy({
     'lr': 1e-3,
     #'lr_steps': (70000, 150000, 175000, 187500),
     #'max_iter': 200000,
-    'lr_steps': (280, 600, 700, 750),
-    'max_iter': 900,
+    'lr_steps': (700, 1500, 1750, 1875),
+    'max_iter': 2250,
 
     # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
     'freeze_bn': True,
