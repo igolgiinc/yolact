@@ -204,10 +204,25 @@ custom_vehicular_dataset = dataset_base.copy({
     'name': 'Custom vehicular dataset',
 
     'train_images': '/mnt/bigdrive1/cnn/van_data/images',
-    'train_info':   '/mnt/bigdrive1/cnn/van_data/output/test1-coco-train.json',
+    'train_info':   '/mnt/bigdrive1/cnn/van_data/output/test2-coco-train.json',
 
     'valid_images': '/mnt/bigdrive1/cnn/van_data/images',
-    'valid_info':   '/mnt/bigdrive1/cnn/van_data/output/test1-coco-valid.json',
+    'valid_info':   '/mnt/bigdrive1/cnn/van_data/output/test2-coco-valid.json',
+
+    'has_gt': True,
+    'class_names': ('car','truck', 'van', 'SUV'),
+    'label_map': {1: 1, 2: 2, 3: 3, 4: 4}
+
+})
+
+custom_vehicular_dataset2 = dataset_base.copy({
+    'name': 'Custom vehicular dataset2',
+
+    'train_images': '/mnt/bigdrive1/cnn/van_data2/images',
+    'train_info':   '/mnt/bigdrive1/cnn/van_data2/output/test1-coco-train.json',
+
+    'valid_images': '/mnt/bigdrive1/cnn/van_data2/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/van_data2/output/test1-coco-valid.json',
 
     'has_gt': True,
     'class_names': ('car','truck', 'van', 'SUV'),
@@ -961,10 +976,10 @@ yolact_vehicular_classonly_config = yolact_base_config.copy({
 
     # Training params
     'lr': 1e-3,
-    #'lr_steps': (70000, 150000, 175000, 187500),
-    #'max_iter': 200000,
-    'lr_steps': (700, 1500, 1750, 1875),
-    'max_iter': 2250,
+    #'lr_steps': (700, 1500, 1750, 1875),
+    #'max_iter': 2250,
+    'lr_steps': (708, 1516, 1769, 1895),
+    'max_iter': 2775,
 
     # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
     'freeze_bn': True,
@@ -975,6 +990,22 @@ yolact_vehicular_classonly_config = yolact_base_config.copy({
     'class_layer_only': True,
     'print_detach': True,
     'print_loss_adj': True,
+
+})
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans
+yolact_vehicular_classonly2_config = yolact_vehicular_classonly_config.copy({
+
+    'name': 'yolact_vehicular_classonly2',
+
+    # Dataset stuff
+    'dataset': custom_vehicular_dataset2,
+    'num_classes': len(custom_vehicular_dataset2.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    'lr_steps': (155, 333, 389, 416),
+    'max_iter': 500,
 
 })
 
