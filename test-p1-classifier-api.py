@@ -33,7 +33,7 @@ def send_post_request(input_img=None):
     while (True):
         retval = 0
         try:
-            response = requests.post('http://10.1.10.163:10000/api/v0/classify/', headers=custom_headers, data=post_json_dumps)
+            response = requests.post('http://10.1.10.110:10000/api/v0/classify/', headers=custom_headers, data=post_json_dumps)
         except requests.exceptions.ConnectionError:
             print("HTTP to webserver failed with ConnectionError.")
             retval = -1
@@ -70,7 +70,7 @@ def send_post_request(input_img=None):
             
 def send_get_request(response_id):
     
-    get_url = 'http://10.1.10.163:10001/api/v0/classify/%d/' % (response_id,)
+    get_url = 'http://10.1.10.110:10000/api/v0/classify/%d/' % (response_id,)
 
     while (True):
         retval = 0
