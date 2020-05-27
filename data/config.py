@@ -188,16 +188,16 @@ pascal_sbd_dataset = dataset_base.copy({
 aerial_car_dataset = dataset_base.copy({
     'name': 'Igolgi Aerial Cars Synthetic Dataset',
 
-    'train_images': './data/Aerial_Cars/Synthetic_v_2.1/synthetic_train/images',
-    'train_info':   './data/Aerial_Cars/Synthetic_v_2.1/synthetic_train/synthetic_train.json',
-
-    'valid_images': './data/Aerial_Cars/Synthetic_v_2.1/synthetic_val/images',
-    'valid_info':   './data/Aerial_Cars/Synthetic_v_2.1/synthetic_val/synthetic_val.json',
-
+    'train_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.2/synthetic_train/images',
+    'train_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.2/synthetic_train/synthetic_train.json',
+    
+    'valid_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.2/synthetic_val/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.2/synthetic_val/synthetic_val.json',
+    
     'has_gt': True,
-    'class_names': ('Car','18 Wheeler',),
-    'label_map': {1: 1, 2: 2}
-
+    'class_names': ('Person',),
+    'label_map': {1: 1}
+    
 })
 
 custom_vehicular_dataset = dataset_base.copy({
@@ -965,7 +965,7 @@ yolact_reduced2_classonly_config = yolact_base_config.copy({
 
 })
 
-# Config that builds on top of COCO with transfer learning for cars, trucks, vans
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
 yolact_vehicular_classonly_config = yolact_base_config.copy({
 
     'name': 'yolact_vehicular_classonly',
@@ -1009,6 +1009,34 @@ yolact_vehicular_classonly2_config = yolact_vehicular_classonly_config.copy({
 
 })
 
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
+yolact_aerial_lastlayeronly_config = yolact_base_config.copy({
+
+    'name': 'yolact_aerial_lastlayeronly',
+
+    # Dataset stuff
+    'dataset': aerial_car_dataset,
+    'num_classes': len(aerial_car_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (700, 1500, 1750, 1875),
+    #'max_iter': 2250,
+    'lr_steps': (68071, 145866, 170177, 182333),
+    'max_iter': 218800,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'pred_head_only': True,
+    'print_detach': True,
+    'print_loss_adj': False,
+
+})
 
 # Default config
 cfg = yolact_base_config.copy()

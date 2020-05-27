@@ -580,7 +580,7 @@ class Yolact(nn.Module):
         cfg._tmp_img_w = img_w
         
         with timer.env('backbone'):
-            if cfg.class_layer_only:
+            if cfg.class_layer_only or cfg.pred_head_only:
                 with torch.no_grad():
                     outs = self.backbone(x)
             else:
@@ -588,7 +588,7 @@ class Yolact(nn.Module):
                 
         if cfg.fpn is not None:
             with timer.env('fpn'):
-                if cfg.class_layer_only:
+                if cfg.class_layer_only or cfg.pred_head_only:
                     with torch.no_grad():
                         # Use backbone.selected_layers because we overwrote self.selected_layers
                         outs = [outs[i] for i in cfg.backbone.selected_layers]
@@ -647,7 +647,13 @@ class Yolact(nn.Module):
                 if cfg.share_prediction_module and pred_layer is not self.prediction_layers[0]:
                     pred_layer.parent = [self.prediction_layers[0]]
 
-                p = pred_layer(pred_x)
+                if cfg.pred_head_only:
+                    if cfg.print_detach:
+                        print("= Detaching pred_x to train only the prediction head")
+                        cfg.print_detach = False
+                    p = pred_layer(pred_x.detach())
+                else:
+                    p = pred_layer(pred_x)
                 
                 for k, v in p.items():
                     pred_outs[k].append(v)
