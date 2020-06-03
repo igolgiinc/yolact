@@ -185,8 +185,8 @@ pascal_sbd_dataset = dataset_base.copy({
     'class_names': PASCAL_CLASSES,
 })
 
-aerial_car_dataset = dataset_base.copy({
-    'name': 'Igolgi Aerial Cars Synthetic Dataset',
+aerial_car_dataset_v4dot2 = dataset_base.copy({
+    'name': 'Igolgi Aerial Cars Synthetic Dataset v4.2 with blur',
 
     'train_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.2/synthetic_train/images',
     'train_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.2/synthetic_train/synthetic_train.json',
@@ -197,6 +197,21 @@ aerial_car_dataset = dataset_base.copy({
     'has_gt': True,
     'class_names': ('Person',),
     'label_map': {1: 1}
+    
+})
+
+aerial_car_dataset_v4dot3 = dataset_base.copy({
+    'name': 'Igolgi Aerial Cars Synthetic Dataset v4.3 with blur',
+
+    'train_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.3_blur/synthetic_train/images',
+    'train_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.3_blur/synthetic_train/synthetic_train.json',
+    
+    'valid_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.3_blur/synthetic_val/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_4.3_blur/synthetic_val/synthetic_val.json',
+    
+    'has_gt': True,
+    'class_names': ('Person', 'Truck', 'Car'),
+    'label_map': {1: 1, 2: 2, 3: 3}
     
 })
 
@@ -865,8 +880,8 @@ yolact_aerial_config = coco_base_config.copy({
     'name': 'yolact_aerial',
 
     # Dataset stuff
-    'dataset': aerial_car_dataset,
-    'num_classes': len(aerial_car_dataset.class_names) + 1,
+    'dataset': aerial_car_dataset_v4dot2,
+    'num_classes': len(aerial_car_dataset_v4dot2.class_names) + 1,
 
     # Image Size
     'max_size': 550,
@@ -1015,8 +1030,37 @@ yolact_aerial_lastlayeronly_config = yolact_base_config.copy({
     'name': 'yolact_aerial_lastlayeronly',
 
     # Dataset stuff
-    'dataset': aerial_car_dataset,
-    'num_classes': len(aerial_car_dataset.class_names) + 1,
+    'dataset': aerial_car_dataset_v4dot2,
+    'num_classes': len(aerial_car_dataset_v4dot2.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (700, 1500, 1750, 1875),
+    #'max_iter': 2250,
+    'lr_steps': (68071, 145866, 170177, 182333),
+    'max_iter': 218800,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'pred_head_only': True,
+    'print_detach': True,
+    'print_loss_adj': False,
+
+})
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
+yolact_aerialv4dot3_lastlayeronly_config = yolact_base_config.copy({
+
+    'name': 'yolact_aerialv4dot3_lastlayeronly',
+
+    # Dataset stuff
+    'dataset': aerial_car_dataset_v4dot3,
+    'num_classes': len(aerial_car_dataset_v4dot3.class_names) + 1,
 
     # Training params
     'lr': 1e-3,
