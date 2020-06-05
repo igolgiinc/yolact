@@ -252,11 +252,11 @@ def get_url_using_requests_lib(url_name, **kwargs):
         
         try:
             if 'stream' in kwargs and kwargs['stream'] == True:
-                response = requests.get(url_name, stream=True)
+                response = requests.get(url_name, stream=True, auth=('igolgi', 'igolgi'))
             elif 'headers' in kwargs and kwargs['headers']:
-                response = requests.get(url_name, headers=kwargs['headers'])
+                response = requests.get(url_name, headers=kwargs['headers'], auth=('igolgi', 'igolgi'))
             else:
-                response = requests.get(url_name)
+                response = requests.get(url_name, auth=('igolgi', 'igolgi'))
         except requests.URLRequired:
             print("Invalid URL: " + str(url_name))
             retval_expect = -1
