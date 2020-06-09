@@ -1005,7 +1005,7 @@ yolact_vehicular_classonly_config = yolact_base_config.copy({
     'class_layer_only': True,
     'print_detach': True,
     'print_loss_adj': True,
-
+    'pred_head_only': False,
 })
 
 # Config that builds on top of COCO with transfer learning for cars, trucks, vans
@@ -1022,6 +1022,34 @@ yolact_vehicular_classonly2_config = yolact_vehicular_classonly_config.copy({
     'lr_steps': (155, 333, 389, 416),
     'max_iter': 500,
 
+})
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
+yolact_vehicular_predheadonly_config = yolact_base_config.copy({
+
+    'name': 'yolact_vehicular_classonly',
+
+    # Dataset stuff
+    'dataset': custom_vehicular_dataset,
+    'num_classes': len(custom_vehicular_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (700, 1500, 1750, 1875),
+    #'max_iter': 2250,
+    'lr_steps': (708, 1516, 1769, 1895),
+    'max_iter': 2775,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'print_detach': True,
+    'print_loss_adj': False,
+    'pred_head_only': True,
 })
 
 # Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
