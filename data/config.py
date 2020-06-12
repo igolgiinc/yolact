@@ -245,7 +245,20 @@ custom_vehicular_dataset2 = dataset_base.copy({
 
 })
 
+field_vehicular_dataset = dataset_base.copy({
+    'name': 'Field vehicular dataset',
 
+    'train_images': '/mnt/bigdrive1/cnn/field_data/images',
+    'train_info':   '/mnt/bigdrive1/cnn/field_data/output/test1-coco-train.json',
+
+    'valid_images': '/mnt/bigdrive1/cnn/field_data/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/field_data/output/test1-coco-valid.json',
+
+    'has_gt': True,
+    'class_names': ('car','truck', 'van', 'SUV'),
+    'label_map': {1: 1, 2: 2, 3: 3, 4: 4}
+
+})
 
 # ----------------------- TRANSFORMS ----------------------- #
 
@@ -1107,6 +1120,63 @@ yolact_aerialv4dot3_lastlayeronly_config = yolact_base_config.copy({
     'pred_head_only': True,
     'print_detach': True,
     'print_loss_adj': False,
+
+})
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
+yolact_field_classonly_config = yolact_base_config.copy({
+
+    'name': 'yolact_field_classonly',
+
+    # Dataset stuff
+    'dataset': field_vehicular_dataset,
+    'num_classes': len(field_vehicular_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (3369, 7215, 8419, 9019),
+    #'max_iter': 13208,
+    'lr_steps': (2347, 5027, 5866, 6284),
+    'max_iter': 9204,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': True,
+    'print_detach': True,
+    'print_loss_adj': True,
+    'pred_head_only': False,
+
+})
+
+yolact_field_predheadonly_config = yolact_base_config.copy({
+
+    'name': 'yolact_field_predheadonly',
+
+    # Dataset stuff
+    'dataset': field_vehicular_dataset,
+    'num_classes': len(field_vehicular_dataset.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (3369, 7215, 8419, 9019),
+    #'max_iter': 13208,
+    'lr_steps': (2301, 4602, 6903, 8283),
+    'max_iter': 9204,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'print_detach': True,
+    'print_loss_adj': False,
+    'pred_head_only': True,
 
 })
 
