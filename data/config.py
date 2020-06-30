@@ -1124,6 +1124,35 @@ yolact_aerialv4dot3_lastlayeronly_config = yolact_base_config.copy({
 })
 
 # Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
+yolact_aerialv4dot3_im700_lastlayeronly_config = yolact_im700_config.copy({
+
+    'name': 'yolact_aerialv4dot3_im700_lastlayeronly',
+
+    # Dataset stuff
+    'dataset': aerial_car_dataset_v4dot3,
+    'num_classes': len(aerial_car_dataset_v4dot3.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (700, 1500, 1750, 1875),
+    #'max_iter': 2250,
+    'lr_steps': (68071, 145866, 170177, 182333),
+    'max_iter': 218800,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'pred_head_only': True,
+    'print_detach': True,
+    'print_loss_adj': False,
+
+})
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
 yolact_field_classonly_config = yolact_base_config.copy({
 
     'name': 'yolact_field_classonly',
