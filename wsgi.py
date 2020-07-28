@@ -1,6 +1,7 @@
 import logging
 from eval import app
 import zmq
+import socket
 
 if __name__ != "__main__":
     gunicorn_logger = logging.getLogger('gunicorn.error')
@@ -13,9 +14,10 @@ def run_webapp(host=None,port=None, **kwargs):
     
     #  Socket to talk to server
     # print(" * Connecting to zmq server...")
-    app.logger.info("Connecting to zmq server...")
     zmq_client_socket = zmq_client_context.socket(zmq.REQ)
-    zmq_client_socket.connect("tcp://%s:5555" % (kwargs["zmqserver_ip"],))        
+    zmqserver_ip = socket.gethostbyname(kwargs["zmqserver_loc"])
+    app.logger.info("Connecting to zmq server at %s" % (str(zmqserver_ip),))
+    zmq_client_socket.connect("tcp://%s:5555" % (zmqserver_ip,))        
     app.config['zmq_client_socket'] = zmq_client_socket
     if host and port:
         app.run(host=host, port=port)
@@ -26,4 +28,4 @@ def run_webapp(host=None,port=None, **kwargs):
 #    run_webapp()
     
 if __name__ == "__main__":
-    run_webapp(host='0.0.0.0', port=13000, zmqserver_ip="localhost")
+    run_webapp(host='0.0.0.0', port=13000, zmqserver_loc="localhost")
