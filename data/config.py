@@ -243,6 +243,37 @@ custom_vehicular_dataset = dataset_base.copy({
 
 })
 
+aerial_car_dataset_v5dot1_noblur = dataset_base.copy({
+    'name': 'Igolgi Aerial Cars Synthetic Dataset v5.1 without blur',
+
+    'train_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_5.1_low_blur/synthetic_train/images',
+    'train_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_5.1_low_blur/synthetic_train/synthetic_train.json',
+    
+    'valid_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_5.1_low_blur/synthetic_val/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_5.1_low_blur/synthetic_val/synthetic_val.json',
+    
+    'has_gt': True,
+    'class_names': ('Truck', 'Car'),
+    'label_map': {1: 1, 2: 2}
+    
+})
+
+aerial_car_dataset_v6dot0_lowblur = dataset_base.copy({
+    
+    'name': 'Igolgi Aerial Cars Synthetic Dataset v6.0 with low blur',
+
+    'train_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_6.0_low_blur/synthetic_train/images',
+    'train_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_6.0_low_blur/synthetic_train/synthetic_train.json',
+    
+    'valid_images': '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_6.0_low_blur/synthetic_val/images',
+    'valid_info':   '/mnt/bigdrive1/cnn/Synthetic_70k_5k_v_6.0_low_blur/synthetic_val/synthetic_val.json',
+    
+    'has_gt': True,
+    'class_names': ('Car',),
+    'label_map': {1: 1}
+    
+})
+
 # ----------------------- TRANSFORMS ----------------------- #
 
 resnet_transform = Config({
@@ -963,6 +994,65 @@ yolact_vehicular_classonly_config = yolact_base_config.copy({
     'print_loss_adj': True,
 
 })
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
+yolact_aerialv5dot1_noblur_im700_lastlayeronly_config = yolact_im700_config.copy({
+
+    'name': 'yolact_aerialv5dot1_noblur_im700_lastlayeronly',
+
+    # Dataset stuff
+    'dataset': aerial_car_dataset_v5dot1_noblur,
+    'num_classes': len(aerial_car_dataset_v5dot1_noblur.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (700, 1500, 1750, 1875),
+    #'max_iter': 2250,
+    'lr_steps': (68071, 145866, 170177, 182333),
+    'max_iter': 218800,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'pred_head_only': True,
+    'print_detach': True,
+    'print_loss_adj': False,
+
+})
+
+# Config that builds on top of COCO with transfer learning for cars, trucks, vans and SUVs
+yolact_aerialv6dot0_lowblur_im700_config = yolact_im700_config.copy({
+
+    'name': 'yolact_aerialv6dot0_lowblur_im700',
+
+    # Dataset stuff
+    'dataset': aerial_car_dataset_v6dot0_lowblur,
+    'num_classes': len(aerial_car_dataset_v6dot0_lowblur.class_names) + 1,
+
+    # Training params
+    'lr': 1e-3,
+    #'lr_steps': (700, 1500, 1750, 1875),
+    #'max_iter': 2250,
+    'lr_steps': (68071, 145866, 170177, 182333),
+    'max_iter': 218800,
+
+    # If using batchnorm anywhere in the backbone, freeze the batchnorm layer during training.
+    'freeze_bn': True,
+    
+    # Loss settings
+    #'use_semantic_segmentation_loss': False,
+    #'semantic_segmentation_alpha': 0,
+    'class_layer_only': False,
+    'pred_head_only': False,
+    'print_detach': True,
+    'print_loss_adj': False,
+
+})
+
 
 # Default config
 cfg = yolact_base_config.copy()
